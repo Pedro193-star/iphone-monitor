@@ -2,7 +2,7 @@ name: Monitor iPhones OLX
 
 on:
   schedule:
-    - cron: '*/15 * * * *'   # Corre a cada 15 minutos
+    - cron: '*/7 * * * *'   # Corre a cada 15 minutos
   workflow_dispatch:           # Permite correr manualmente com um clique
 
 jobs:
