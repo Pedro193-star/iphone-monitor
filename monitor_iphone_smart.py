@@ -1,8 +1,7 @@
 """
-╔══════════════════════════════════════════════════════════════════════╗
-║        MONITOR DE iPHONES — OLX Portugal                           ║
-║        Alerta quando o preço está abaixo do teu limite             ║
-╚══════════════════════════════════════════════════════════════════════╝
+MONITOR DE iPHONES - OLX Portugal
+Notifica quando o preco esta abaixo do teu limite maximo
+e acima de 50 euros (filtra capas e acessorios)
 """
 
 import requests
@@ -12,44 +11,41 @@ import os
 import re
 import time
 from datetime import datetime
-from typing import Optional
 
 
 # ======================================================================
-#  ⚙️  CONFIGURAÇÕES — EDITA APENAS ESTA SECÇÃO
+#  CONFIGURACOES - EDITA APENAS ESTA SECCAO
 # ======================================================================
 
-# Lê automaticamente os secrets do GitHub Actions
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID   = os.environ.get("TELEGRAM_CHAT_ID", "")
 
-# Ficheiro de persistência (IDs já notificados)
-FICHEIRO_DADOS = "dados_mercado.json"
+FICHEIRO_HISTORICO = "historico.json"
 
-# -----------------------------------------------------------------------
-# 💶 PREÇOS MÁXIMOS POR MODELO
-# Se um anúncio aparecer ABAIXO deste valor → recebes notificação
-# Muda os valores à tua vontade!
-# -----------------------------------------------------------------------
+PRECO_MINIMO_GLOBAL = 50  # Filtra capas, peliculas e acessorios
+
+# ----------------------------------------------------------------------
+# MODELOS A MONITORIZAR
+# Altera apenas o "preco_max" de cada modelo ao teu gosto
+# ----------------------------------------------------------------------
 MODELOS = {
-    "iPhone 14":         {"preco_max": 300, "url": "https://www.olx.pt/informatica-e-tecnologia/telemoveis-e-smartphones/q-iphone-14/"},
-    "iPhone 14 Pro":     {"preco_max": 380, "url": "https://www.olx.pt/informatica-e-tecnologia/telemoveis-e-smartphones/q-iphone-14-pro/"},
-    "iPhone 14 Pro Max": {"preco_max": 420, "url": "https://www.olx.pt/informatica-e-tecnologia/telemoveis-e-smartphones/q-iphone-14-pro-max/"},
-    "iPhone 15":         {"preco_max": 450, "url": "https://www.olx.pt/informatica-e-tecnologia/telemoveis-e-smartphones/q-iphone-15/"},
-    "iPhone 15 Pro":     {"preco_max": 550, "url": "https://www.olx.pt/informatica-e-tecnologia/telemoveis-e-smartphones/q-iphone-15-pro/"},
-    "iPhone 15 Pro Max": {"preco_max": 620, "url": "https://www.olx.pt/informatica-e-tecnologia/telemoveis-e-smartphones/q-iphone-15-pro-max/"},
-    "iPhone 16":         {"preco_max": 600, "url": "https://www.olx.pt/informatica-e-tecnologia/telemoveis-e-smartphones/q-iphone-16/"},
-    "iPhone 16 Pro":     {"preco_max": 700, "url": "https://www.olx.pt/informatica-e-tecnologia/telemoveis-e-smartphones/q-iphone-16-pro/"},
-    "iPhone 16 Pro Max": {"preco_max": 800, "url": "https://www.olx.pt/informatica-e-tecnologia/telemoveis-e-smartphones/q-iphone-16-pro-max/"},
-    "iPhone 17":         {"preco_max": 750, "url": "https://www.olx.pt/informatica-e-tecnologia/telemoveis-e-smartphones/q-iphone-17/"},
-    "iPhone 17 Pro":     {"preco_max": 900, "url": "https://www.olx.pt/informatica-e-tecnologia/telemoveis-e-smartphones/q-iphone-17-pro/"},
+    "iPhone 14":         {"preco_max": 300,  "url": "https://www.olx.pt/informatica-e-tecnologia/telemoveis-e-smartphones/q-iphone-14/"},
+    "iPhone 14 Pro":     {"preco_max": 380,  "url": "https://www.olx.pt/informatica-e-tecnologia/telemoveis-e-smartphones/q-iphone-14-pro/"},
+    "iPhone 14 Pro Max": {"preco_max": 420,  "url": "https://www.olx.pt/informatica-e-tecnologia/telemoveis-e-smartphones/q-iphone-14-pro-max/"},
+    "iPhone 15":         {"preco_max": 450,  "url": "https://www.olx.pt/informatica-e-tecnologia/telemoveis-e-smartphones/q-iphone-15/"},
+    "iPhone 15 Pro":     {"preco_max": 550,  "url": "https://www.olx.pt/informatica-e-tecnologia/telemoveis-e-smartphones/q-iphone-15-pro/"},
+    "iPhone 15 Pro Max": {"preco_max": 620,  "url": "https://www.olx.pt/informatica-e-tecnologia/telemoveis-e-smartphones/q-iphone-15-pro-max/"},
+    "iPhone 16":         {"preco_max": 600,  "url": "https://www.olx.pt/informatica-e-tecnologia/telemoveis-e-smartphones/q-iphone-16/"},
+    "iPhone 16 Pro":     {"preco_max": 700,  "url": "https://www.olx.pt/informatica-e-tecnologia/telemoveis-e-smartphones/q-iphone-16-pro/"},
+    "iPhone 16 Pro Max": {"preco_max": 800,  "url": "https://www.olx.pt/informatica-e-tecnologia/telemoveis-e-smartphones/q-iphone-16-pro-max/"},
+    "iPhone 17":         {"preco_max": 750,  "url": "https://www.olx.pt/informatica-e-tecnologia/telemoveis-e-smartphones/q-iphone-17/"},
+    "iPhone 17 Pro":     {"preco_max": 900,  "url": "https://www.olx.pt/informatica-e-tecnologia/telemoveis-e-smartphones/q-iphone-17-pro/"},
     "iPhone 17 Pro Max": {"preco_max": 1000, "url": "https://www.olx.pt/informatica-e-tecnologia/telemoveis-e-smartphones/q-iphone-17-pro-max/"},
 }
 
 # ======================================================================
-#  FIM DAS CONFIGURAÇÕES
+#  FIM DAS CONFIGURACOES
 # ======================================================================
-
 
 HEADERS = {
     "User-Agent": (
@@ -62,27 +58,77 @@ HEADERS = {
 }
 
 
-def carregar_vistos() -> list:
-    if os.path.exists(FICHEIRO_DADOS):
+# ----------------------------------------------------------------------
+# HISTORICO  — garante que e sempre uma lista simples de strings
+# ----------------------------------------------------------------------
+
+def carregar_historico():
+    if not os.path.exists(FICHEIRO_HISTORICO):
+        return []
+    try:
+        with open(FICHEIRO_HISTORICO, "r", encoding="utf-8") as f:
+            dados = json.load(f)
+        # Compatibilidade: se vier um dict do script antigo, extrai a lista
+        if isinstance(dados, dict):
+            ids = dados.get("vistos", [])
+        elif isinstance(dados, list):
+            ids = dados
+        else:
+            ids = []
+        # Garante que todos os elementos sao strings
+        return [str(i) for i in ids]
+    except Exception:
+        return []
+
+
+def guardar_historico(historico):
+    try:
+        # Guarda apenas os ultimos 5000 (lista simples de strings)
+        lista = [str(i) for i in historico][-5000:]
+        with open(FICHEIRO_HISTORICO, "w", encoding="utf-8") as f:
+            json.dump(lista, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        log("Erro ao guardar historico: " + str(e))
+
+
+# ----------------------------------------------------------------------
+# UTILS
+# ----------------------------------------------------------------------
+
+def log(msg):
+    print("[" + datetime.now().strftime("%Y-%m-%d %H:%M:%S") + "] " + str(msg))
+
+
+def extrair_preco(texto):
+    if not texto:
+        return None
+    limpo = texto.strip().lower()
+    if any(p in limpo for p in ["gratis", "grátis", "troca", "ver desc"]):
+        return None
+    sem_milhar = re.sub(r"\.(?=\d{3})", "", limpo)
+    sem_decimal = re.sub(r",\d{1,2}$", "", sem_milhar)
+    numeros = re.findall(r"\d+", sem_decimal)
+    if numeros:
         try:
-            with open(FICHEIRO_DADOS, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except (json.JSONDecodeError, IOError):
-            pass
-    return []
+            return int(numeros[0])
+        except Exception:
+            return None
+    return None
 
 
-def guardar_vistos(vistos: list):
-    with open(FICHEIRO_DADOS, "w", encoding="utf-8") as f:
-        json.dump(vistos[-5000:], f, ensure_ascii=False, indent=2)
+def extrair_id(link):
+    match = re.search(r"ID(\w+)", link)
+    if match:
+        return match.group(1)
+    return str(abs(hash(link)) % (10 ** 10))
 
 
-def log(msg: str):
-    print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {msg}")
+# ----------------------------------------------------------------------
+# TELEGRAM
+# ----------------------------------------------------------------------
 
-
-def enviar_telegram(texto: str) -> bool:
-    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+def enviar_telegram(texto):
+    url = "https://api.telegram.org/bot" + TELEGRAM_BOT_TOKEN + "/sendMessage"
     payload = {
         "chat_id": TELEGRAM_CHAT_ID,
         "text": texto,
@@ -92,57 +138,48 @@ def enviar_telegram(texto: str) -> bool:
     try:
         r = requests.post(url, json=payload, timeout=10)
         return r.ok
-    except requests.RequestException as e:
-        log(f"[Telegram] Erro: {e}")
+    except Exception as e:
+        log("Telegram erro: " + str(e))
         return False
 
 
-def montar_alerta(modelo: str, anuncio: dict, preco_max: int) -> str:
-    poupanca = preco_max - anuncio["preco_num"]
-    estrelas = "🔥🔥" if poupanca > 100 else ("🔥" if poupanca > 50 else "✅")
+def montar_alerta(modelo, titulo, preco, preco_max, link):
+    poupanca = preco_max - preco
+    if poupanca > 150:
+        icone = "\U0001f525\U0001f525"
+        label = "NEGOCIO INCRIVEL"
+    elif poupanca > 80:
+        icone = "\U0001f525"
+        label = "EXCELENTE NEGOCIO"
+    else:
+        icone = "\u2705"
+        label = "BOM NEGOCIO"
+
     return (
-        f"{estrelas} <b>NEGÓCIO ABAIXO DO TEU LIMITE!</b>\n\n"
-        f"📱 <b>Modelo:</b> {modelo}\n"
-        f"📌 <b>{anuncio['titulo']}</b>\n\n"
-        f"💶 <b>Preço anúncio:</b> {anuncio['preco_num']}€\n"
-        f"🎯 <b>Teu limite:</b> {preco_max}€\n"
-        f"💰 <b>Poupança:</b> {poupanca}€ abaixo do limite\n\n"
-        f"🔗 <a href=\"{anuncio['link']}\">Ver anúncio no OLX</a>"
+        icone + " <b>" + label + "!</b>\n\n"
+        "\U0001f4f1 <b>Modelo:</b> " + modelo + "\n"
+        "\U0001f4cc <b>" + titulo + "</b>\n\n"
+        "\U0001f4b6 <b>Preco:</b> " + str(preco) + "\u20ac\n"
+        "\U0001f3af <b>Teu limite:</b> " + str(preco_max) + "\u20ac\n"
+        "\U0001f4b0 <b>Poupas:</b> " + str(poupanca) + "\u20ac abaixo do teu limite\n\n"
+        "\U0001f517 <a href=\"" + link + "\">Ver anuncio no OLX</a>"
     )
 
 
-def extrair_preco(texto: str) -> Optional[int]:
-    if not texto:
-        return None
-    limpo = texto.strip().lower()
-    if any(p in limpo for p in ["grátis", "troca", "ver desc"]):
-        return None
-    sem_milhar = re.sub(r"\.(?=\d{3})", "", limpo)
-    sem_decimal = re.sub(r",\d{1,2}$", "", sem_milhar)
-    numeros = re.findall(r"\d+", sem_decimal)
-    if numeros:
-        valor = int(numeros[0])
-        if 50 <= valor <= 5000:
-            return valor
-    return None
+# ----------------------------------------------------------------------
+# SCRAPING
+# ----------------------------------------------------------------------
 
-
-def extrair_id(link: str) -> str:
-    match = re.search(r"ID(\w+)", link)
-    if match:
-        return match.group(1)
-    return str(abs(hash(link)) % (10 ** 10))
-
-
-def scrape_olx(url: str) -> list:
+def scrape_olx(url):
     try:
         r = requests.get(url, headers=HEADERS, timeout=20)
         r.raise_for_status()
-    except requests.RequestException as e:
-        log(f"  [OLX] Erro HTTP: {e}")
+    except Exception as e:
+        log("  Erro ao aceder OLX: " + str(e))
         return []
 
     soup = BeautifulSoup(r.text, "html.parser")
+
     cards = soup.find_all("div", {"data-cy": "l-card"})
     if not cards:
         cards = soup.find_all("li", class_=re.compile(r"css-\w+"))
@@ -179,76 +216,100 @@ def scrape_olx(url: str) -> list:
             anuncios.append({
                 "id": anuncio_id,
                 "titulo": titulo,
-                "preco_num": preco_num,
+                "preco": preco_num,
                 "link": link,
             })
         except Exception as e:
-            log(f"  Erro num card: {e}")
+            log("  Erro num card: " + str(e))
 
     return anuncios
 
 
-def processar_modelo(modelo: str, config: dict, vistos: list) -> int:
+# ----------------------------------------------------------------------
+# PROCESSAMENTO
+# ----------------------------------------------------------------------
+
+def processar_modelo(modelo, config, historico):
     preco_max = config["preco_max"]
     url = config["url"]
 
-    log(f"\n🔍 {modelo} — limite: {preco_max}€")
+    log("Verificar: " + modelo + " | max: " + str(preco_max) + "eur")
 
     anuncios = scrape_olx(url)
     if not anuncios:
-        log(f"  Sem anúncios encontrados.")
+        log("  Sem anuncios encontrados.")
         return 0
 
-    log(f"  {len(anuncios)} anúncio(s) recolhido(s).")
+    log("  " + str(len(anuncios)) + " anuncio(s) recolhido(s).")
     alertas = 0
 
     for anuncio in anuncios:
-        aid = anuncio["id"]
+        aid = str(anuncio["id"])
+        preco = anuncio["preco"]
 
-        if aid in vistos:
+        # Ja foi visto antes?
+        if aid in historico:
             continue
 
-        vistos.append(aid)
+        # Marca sempre como visto
+        historico.append(aid)
 
-        if anuncio["preco_num"] >= preco_max:
+        # Filtra acessorios e capas (abaixo do minimo global)
+        if preco < PRECO_MINIMO_GLOBAL:
+            log("  Ignorado (capa/acessorio " + str(preco) + "eur): " + anuncio["titulo"])
             continue
 
-        poupanca = preco_max - anuncio["preco_num"]
-        log(f"  🔥 {anuncio['titulo']} — {anuncio['preco_num']}€ (limite {preco_max}€, poupa {poupanca}€)")
+        # Nao e negocio suficiente
+        if preco >= preco_max:
+            continue
 
-        if enviar_telegram(montar_alerta(modelo, anuncio, preco_max)):
+        poupanca = preco_max - preco
+        log("  NEGOCIO: " + anuncio["titulo"] + " | " + str(preco) + "eur (poupa " + str(poupanca) + "eur)")
+
+        msg = montar_alerta(modelo, anuncio["titulo"], preco, preco_max, anuncio["link"])
+        if enviar_telegram(msg):
             alertas += 1
-            log(f"  ✅ Alerta enviado.")
+            log("  Alerta Telegram enviado.")
         else:
-            log(f"  ❌ Falha ao enviar.")
+            log("  Falha ao enviar Telegram.")
 
         time.sleep(1)
 
     return alertas
 
 
+# ----------------------------------------------------------------------
+# MAIN
+# ----------------------------------------------------------------------
+
 def main():
-    log("=" * 60)
-    log("▶️  MONITOR DE iPHONES INICIADO")
-    log(f"   {len(MODELOS)} modelos a monitorizar")
-    log("=" * 60)
+    log("=" * 50)
+    log("MONITOR DE iPHONES INICIADO")
+    log(str(len(MODELOS)) + " modelos | minimo global: " + str(PRECO_MINIMO_GLOBAL) + "eur")
+    log("=" * 50)
 
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
-        log("❌ ERRO: Credenciais Telegram não definidas!")
+        log("ERRO: Credenciais Telegram nao definidas!")
         return
 
-    vistos = carregar_vistos()
+    historico = carregar_historico()
+    log("Historico: " + str(len(historico)) + " anuncios ja vistos.")
+
     total_alertas = 0
 
     for modelo, config in MODELOS.items():
-        alertas = processar_modelo(modelo, config, vistos)
-        total_alertas += alertas
-        guardar_vistos(vistos)
+        try:
+            alertas = processar_modelo(modelo, config, historico)
+            total_alertas += alertas
+        except Exception as e:
+            log("Erro ao processar " + modelo + ": " + str(e))
+        guardar_historico(historico)
         time.sleep(3)
 
-    log("\n" + "=" * 60)
-    log(f"✔️  CONCLUÍDO — {total_alertas} alerta(s) enviado(s).")
-    log("=" * 60 + "\n")
+    log("=" * 50)
+    log("CONCLUIDO - " + str(total_alertas) + " alerta(s) enviado(s).")
+    log("Historico: " + str(len(historico)) + " anuncios no total.")
+    log("=" * 50)
 
 
 if __name__ == "__main__":
