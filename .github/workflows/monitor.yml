@@ -1,0 +1,43 @@
+name: Monitor iPhones OLX
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'   # Corre a cada 15 minutos
+  workflow_dispatch:           # Permite correr manualmente com um clique
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout do repositório
+        uses: actions/checkout@v4
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Instalar dependências
+        run: pip install requests beautifulsoup4
+
+      - name: Restaurar dados persistentes (anúncios vistos + médias)
+        uses: actions/cache@v4
+        with:
+          path: dados_mercado.json
+          key: dados-mercado-${{ github.run_id }}
+          restore-keys: |
+            dados-mercado-
+
+      - name: Correr o monitor
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python monitor_iphone_smart.py
+
+      - name: Guardar dados atualizados
+        uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: dados_mercado.json
+          key: dados-mercado-${{ github.run_id }}
