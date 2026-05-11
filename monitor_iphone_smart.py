@@ -1,7 +1,6 @@
 """
 MONITOR DE iPHONES - OLX Portugal
-Notifica quando o preco esta abaixo do teu limite maximo
-e acima de 50 euros (filtra capas e acessorios)
+URLs corrigidos + headers melhorados para evitar bloqueios
 """
 
 import requests
@@ -14,52 +13,56 @@ from datetime import datetime
 
 
 # ======================================================================
-#  CONFIGURACOES - EDITA APENAS ESTA SECCAO
+#  CONFIGURACOES
 # ======================================================================
 
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID   = os.environ.get("TELEGRAM_CHAT_ID", "")
 
 FICHEIRO_HISTORICO = "historico.json"
-
-PRECO_MINIMO_GLOBAL = 50  # Filtra capas, peliculas e acessorios
+PRECO_MINIMO_GLOBAL = 50
 
 # ----------------------------------------------------------------------
-# MODELOS A MONITORIZAR
-# Altera apenas o "preco_max" de cada modelo ao teu gosto
+# MODELOS - URLs corrigidos para o novo formato OLX Portugal
 # ----------------------------------------------------------------------
 MODELOS = {
-    "iPhone 14":         {"preco_max": 300,  "url": "https://www.olx.pt/informatica-e-tecnologia/telemoveis-e-smartphones/q-iphone-14/"},
-    "iPhone 14 Pro":     {"preco_max": 380,  "url": "https://www.olx.pt/informatica-e-tecnologia/telemoveis-e-smartphones/q-iphone-14-pro/"},
-    "iPhone 14 Pro Max": {"preco_max": 420,  "url": "https://www.olx.pt/informatica-e-tecnologia/telemoveis-e-smartphones/q-iphone-14-pro-max/"},
-    "iPhone 15":         {"preco_max": 450,  "url": "https://www.olx.pt/informatica-e-tecnologia/telemoveis-e-smartphones/q-iphone-15/"},
-    "iPhone 15 Pro":     {"preco_max": 550,  "url": "https://www.olx.pt/informatica-e-tecnologia/telemoveis-e-smartphones/q-iphone-15-pro/"},
-    "iPhone 15 Pro Max": {"preco_max": 620,  "url": "https://www.olx.pt/informatica-e-tecnologia/telemoveis-e-smartphones/q-iphone-15-pro-max/"},
-    "iPhone 16":         {"preco_max": 600,  "url": "https://www.olx.pt/informatica-e-tecnologia/telemoveis-e-smartphones/q-iphone-16/"},
-    "iPhone 16 Pro":     {"preco_max": 700,  "url": "https://www.olx.pt/informatica-e-tecnologia/telemoveis-e-smartphones/q-iphone-16-pro/"},
-    "iPhone 16 Pro Max": {"preco_max": 800,  "url": "https://www.olx.pt/informatica-e-tecnologia/telemoveis-e-smartphones/q-iphone-16-pro-max/"},
-    "iPhone 17":         {"preco_max": 750,  "url": "https://www.olx.pt/informatica-e-tecnologia/telemoveis-e-smartphones/q-iphone-17/"},
-    "iPhone 17 Pro":     {"preco_max": 900,  "url": "https://www.olx.pt/informatica-e-tecnologia/telemoveis-e-smartphones/q-iphone-17-pro/"},
-    "iPhone 17 Pro Max": {"preco_max": 1000, "url": "https://www.olx.pt/informatica-e-tecnologia/telemoveis-e-smartphones/q-iphone-17-pro-max/"},
+    "iPhone 14":         {"preco_max": 300,  "url": "https://www.olx.pt/ads/q-iphone-14/"},
+    "iPhone 14 Pro":     {"preco_max": 380,  "url": "https://www.olx.pt/ads/q-iphone-14-pro/"},
+    "iPhone 14 Pro Max": {"preco_max": 420,  "url": "https://www.olx.pt/ads/q-iphone-14-pro-max/"},
+    "iPhone 15":         {"preco_max": 450,  "url": "https://www.olx.pt/ads/q-iphone-15/"},
+    "iPhone 15 Pro":     {"preco_max": 550,  "url": "https://www.olx.pt/ads/q-iphone-15-pro/"},
+    "iPhone 15 Pro Max": {"preco_max": 620,  "url": "https://www.olx.pt/ads/q-iphone-15-pro-max/"},
+    "iPhone 16":         {"preco_max": 600,  "url": "https://www.olx.pt/ads/q-iphone-16/"},
+    "iPhone 16 Pro":     {"preco_max": 700,  "url": "https://www.olx.pt/ads/q-iphone-16-pro/"},
+    "iPhone 16 Pro Max": {"preco_max": 800,  "url": "https://www.olx.pt/ads/q-iphone-16-pro-max/"},
+    "iPhone 17":         {"preco_max": 750,  "url": "https://www.olx.pt/ads/q-iphone-17/"},
+    "iPhone 17 Pro":     {"preco_max": 900,  "url": "https://www.olx.pt/ads/q-iphone-17-pro/"},
+    "iPhone 17 Pro Max": {"preco_max": 1000, "url": "https://www.olx.pt/ads/q-iphone-17-pro-max/"},
 }
 
 # ======================================================================
-#  FIM DAS CONFIGURACOES
-# ======================================================================
 
+# Headers que imitam um browser real para evitar bloqueios
 HEADERS = {
     "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
         "AppleWebKit/537.36 (KHTML, like Gecko) "
         "Chrome/124.0.0.0 Safari/537.36"
     ),
-    "Accept-Language": "pt-PT,pt;q=0.9",
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+    "Accept-Language": "pt-PT,pt;q=0.9,en;q=0.8",
+    "Accept-Encoding": "gzip, deflate, br",
+    "Connection": "keep-alive",
+    "Upgrade-Insecure-Requests": "1",
+    "Sec-Fetch-Dest": "document",
+    "Sec-Fetch-Mode": "navigate",
+    "Sec-Fetch-Site": "none",
+    "Cache-Control": "max-age=0",
 }
 
 
 # ----------------------------------------------------------------------
-# HISTORICO  — garante que e sempre uma lista simples de strings
+# HISTORICO
 # ----------------------------------------------------------------------
 
 def carregar_historico():
@@ -68,14 +71,12 @@ def carregar_historico():
     try:
         with open(FICHEIRO_HISTORICO, "r", encoding="utf-8") as f:
             dados = json.load(f)
-        # Compatibilidade: se vier um dict do script antigo, extrai a lista
         if isinstance(dados, dict):
             ids = dados.get("vistos", [])
         elif isinstance(dados, list):
             ids = dados
         else:
             ids = []
-        # Garante que todos os elementos sao strings
         return [str(i) for i in ids]
     except Exception:
         return []
@@ -83,7 +84,6 @@ def carregar_historico():
 
 def guardar_historico(historico):
     try:
-        # Guarda apenas os ultimos 5000 (lista simples de strings)
         lista = [str(i) for i in historico][-5000:]
         with open(FICHEIRO_HISTORICO, "w", encoding="utf-8") as f:
             json.dump(lista, f, ensure_ascii=False, indent=2)
@@ -161,7 +161,7 @@ def montar_alerta(modelo, titulo, preco, preco_max, link):
         "\U0001f4cc <b>" + titulo + "</b>\n\n"
         "\U0001f4b6 <b>Preco:</b> " + str(preco) + "\u20ac\n"
         "\U0001f3af <b>Teu limite:</b> " + str(preco_max) + "\u20ac\n"
-        "\U0001f4b0 <b>Poupas:</b> " + str(poupanca) + "\u20ac abaixo do teu limite\n\n"
+        "\U0001f4b0 <b>Poupas:</b> " + str(poupanca) + "\u20ac abaixo do limite\n\n"
         "\U0001f517 <a href=\"" + link + "\">Ver anuncio no OLX</a>"
     )
 
@@ -171,8 +171,19 @@ def montar_alerta(modelo, titulo, preco, preco_max, link):
 # ----------------------------------------------------------------------
 
 def scrape_olx(url):
+    session = requests.Session()
+    session.headers.update(HEADERS)
+
+    # Visita a pagina principal primeiro (simula comportamento humano)
     try:
-        r = requests.get(url, headers=HEADERS, timeout=20)
+        session.get("https://www.olx.pt", timeout=15)
+        time.sleep(2)
+    except Exception:
+        pass
+
+    try:
+        r = session.get(url, timeout=20)
+        log("  HTTP " + str(r.status_code) + " — " + url)
         r.raise_for_status()
     except Exception as e:
         log("  Erro ao aceder OLX: " + str(e))
@@ -180,17 +191,35 @@ def scrape_olx(url):
 
     soup = BeautifulSoup(r.text, "html.parser")
 
-    cards = soup.find_all("div", {"data-cy": "l-card"})
-    if not cards:
-        cards = soup.find_all("li", class_=re.compile(r"css-\w+"))
+    # Tenta varios seletores conhecidos do OLX
+    cards = (
+        soup.find_all("div", {"data-cy": "l-card"}) or
+        soup.find_all("div", {"data-testid": "listing-grid-item"}) or
+        soup.find_all("li", {"data-cy": "l-card"}) or
+        soup.find_all("article") or
+        soup.find_all("li", class_=re.compile(r"css-\w{5,}"))
+    )
+
+    log("  Cards encontrados: " + str(len(cards)))
+
+    # Debug: mostra o titulo da pagina para confirmar que carregou
+    title = soup.find("title")
+    if title:
+        log("  Pagina: " + title.get_text(strip=True)[:60])
 
     anuncios = []
     for card in cards:
         try:
-            titulo_el = card.find("h6") or card.find("h4") or card.find("h3")
+            titulo_el = (
+                card.find("h6") or card.find("h4") or card.find("h3") or
+                card.find("h2") or
+                card.find(class_=re.compile(r"title|titulo|name", re.I))
+            )
             if not titulo_el:
                 continue
             titulo = titulo_el.get_text(strip=True)
+            if not titulo:
+                continue
 
             link_el = card.find("a", href=True)
             if not link_el:
@@ -203,9 +232,10 @@ def scrape_olx(url):
             anuncio_id = extrair_id(link)
 
             preco_el = (
-                card.find("p", {"data-testid": "ad-price"})
-                or card.find("p", class_=re.compile(r"price|Price", re.I))
-                or card.find("strong")
+                card.find("p", {"data-testid": "ad-price"}) or
+                card.find("p", class_=re.compile(r"price|Price", re.I)) or
+                card.find("span", class_=re.compile(r"price|Price", re.I)) or
+                card.find("strong")
             )
             preco_texto = preco_el.get_text(strip=True) if preco_el else ""
             preco_num = extrair_preco(preco_texto)
@@ -233,33 +263,29 @@ def processar_modelo(modelo, config, historico):
     preco_max = config["preco_max"]
     url = config["url"]
 
-    log("Verificar: " + modelo + " | max: " + str(preco_max) + "eur")
+    log("--- " + modelo + " | max: " + str(preco_max) + "eur ---")
 
     anuncios = scrape_olx(url)
     if not anuncios:
-        log("  Sem anuncios encontrados.")
+        log("  Nenhum anuncio valido encontrado.")
         return 0
 
-    log("  " + str(len(anuncios)) + " anuncio(s) recolhido(s).")
+    log("  " + str(len(anuncios)) + " anuncio(s) com preco valido.")
     alertas = 0
 
     for anuncio in anuncios:
         aid = str(anuncio["id"])
         preco = anuncio["preco"]
 
-        # Ja foi visto antes?
         if aid in historico:
             continue
 
-        # Marca sempre como visto
         historico.append(aid)
 
-        # Filtra acessorios e capas (abaixo do minimo global)
         if preco < PRECO_MINIMO_GLOBAL:
-            log("  Ignorado (capa/acessorio " + str(preco) + "eur): " + anuncio["titulo"])
+            log("  Ignorado (acessorio " + str(preco) + "eur): " + anuncio["titulo"])
             continue
 
-        # Nao e negocio suficiente
         if preco >= preco_max:
             continue
 
@@ -269,9 +295,9 @@ def processar_modelo(modelo, config, historico):
         msg = montar_alerta(modelo, anuncio["titulo"], preco, preco_max, anuncio["link"])
         if enviar_telegram(msg):
             alertas += 1
-            log("  Alerta Telegram enviado.")
+            log("  Alerta enviado!")
         else:
-            log("  Falha ao enviar Telegram.")
+            log("  Falha ao enviar alerta.")
 
         time.sleep(1)
 
@@ -285,7 +311,7 @@ def processar_modelo(modelo, config, historico):
 def main():
     log("=" * 50)
     log("MONITOR DE iPHONES INICIADO")
-    log(str(len(MODELOS)) + " modelos | minimo global: " + str(PRECO_MINIMO_GLOBAL) + "eur")
+    log(str(len(MODELOS)) + " modelos | minimo: " + str(PRECO_MINIMO_GLOBAL) + "eur")
     log("=" * 50)
 
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
@@ -302,9 +328,9 @@ def main():
             alertas = processar_modelo(modelo, config, historico)
             total_alertas += alertas
         except Exception as e:
-            log("Erro ao processar " + modelo + ": " + str(e))
+            log("Erro em " + modelo + ": " + str(e))
         guardar_historico(historico)
-        time.sleep(3)
+        time.sleep(4)
 
     log("=" * 50)
     log("CONCLUIDO - " + str(total_alertas) + " alerta(s) enviado(s).")
