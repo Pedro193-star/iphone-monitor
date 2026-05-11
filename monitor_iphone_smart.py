@@ -29,6 +29,10 @@ MINUTOS_MAXIMO     = 8
 HORAS_VALIDADE_MEDIA = 6
 
 MODELOS = {
+    "iPhone 13":         "iphone 13",
+    "iPhone 13 Mini":    "iphone 13 mini",
+    "iPhone 13 Pro":     "iphone 13 pro",
+    "iPhone 13 Pro Max": "iphone 13 pro max",
     "iPhone 14":         "iphone 14",
     "iPhone 14 Pro":     "iphone 14 pro",
     "iPhone 14 Pro Max": "iphone 14 pro max",
