@@ -1,6 +1,7 @@
 """
 MONITOR DE iPHONES - OLX Portugal
-Envia notificacao para TODOS os anuncios novos (sem filtro de preco)
+So notifica anuncios publicados nos ultimos 8 minutos
+(corre a cada 5 min via cron-job.org + GitHub Actions)
 """
 
 import requests
@@ -8,7 +9,7 @@ import json
 import os
 import re
 import time
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from urllib.parse import quote
 
 
@@ -21,6 +22,9 @@ TELEGRAM_CHAT_ID   = os.environ.get("TELEGRAM_CHAT_ID", "")
 
 FICHEIRO_HISTORICO = "historico.json"
 
+# Anuncios com mais de X minutos sao ignorados
+MINUTOS_MAXIMO = 8
+
 MODELOS = {
     "iPhone 14":         "iphone 14",
     "iPhone 14 Pro":     "iphone 14 pro",
@@ -31,6 +35,9 @@ MODELOS = {
     "iPhone 16":         "iphone 16",
     "iPhone 16 Pro":     "iphone 16 pro",
     "iPhone 16 Pro Max": "iphone 16 pro max",
+    "iPhone 17":         "iphone 17",
+    "iPhone 17 Pro":     "iphone 17 pro",
+    "iPhone 17 Pro Max": "iphone 17 pro max",
 }
 
 # ======================================================================
@@ -97,6 +104,33 @@ def extrair_preco(valor):
         return None
 
 
+def anuncio_e_recente(created_at_str):
+    """
+    Devolve True se o anuncio foi publicado nos ultimos MINUTOS_MAXIMO minutos.
+    O OLX devolve timestamps em formato ISO 8601, ex: "2026-05-11T15:30:00+00:00"
+    """
+    if not created_at_str:
+        # Se nao tem timestamp, aceita (nao queremos perder anuncios)
+        return True
+    try:
+        # Parse do timestamp com timezone
+        ts = created_at_str.replace("Z", "+00:00")
+        criado_em = datetime.fromisoformat(ts)
+
+        # Hora atual em UTC
+        agora = datetime.now(timezone.utc)
+
+        # Diferenca em minutos
+        diff = (agora - criado_em).total_seconds() / 60
+
+        log("  Publicado ha " + str(round(diff, 1)) + " min")
+        return diff <= MINUTOS_MAXIMO
+
+    except Exception as e:
+        log("  Erro ao ler timestamp (" + str(created_at_str) + "): " + str(e))
+        return True  # Em caso de erro, aceita o anuncio
+
+
 # ----------------------------------------------------------------------
 # TELEGRAM
 # ----------------------------------------------------------------------
@@ -116,13 +150,15 @@ def enviar_telegram(texto):
         return False
 
 
-def montar_mensagem(modelo, titulo, preco, link):
+def montar_mensagem(modelo, titulo, preco, link, minutos):
     preco_txt = str(preco) + "\u20ac" if preco else "Preco nao indicado"
+    tempo_txt = str(round(minutos, 0)) + " min atras" if minutos is not None else "Agora"
     return (
-        "\U0001f4f1 <b>Novo anuncio OLX!</b>\n\n"
-        "\U0001f50d <b>Modelo:</b> " + modelo + "\n"
+        "\U0001f195 <b>NOVO ANUNCIO OLX!</b>\n\n"
+        "\U0001f4f1 <b>Modelo:</b> " + modelo + "\n"
         "\U0001f4cc <b>" + titulo + "</b>\n"
-        "\U0001f4b6 <b>Preco:</b> " + preco_txt + "\n\n"
+        "\U0001f4b6 <b>Preco:</b> " + preco_txt + "\n"
+        "\U0001f55b <b>Publicado:</b> " + tempo_txt + "\n\n"
         "\U0001f517 <a href=\"" + link + "\">Ver anuncio no OLX</a>"
     )
 
@@ -132,33 +168,51 @@ def montar_mensagem(modelo, titulo, preco, link):
 # ----------------------------------------------------------------------
 
 def buscar_api(query):
-    url = "https://www.olx.pt/api/v1/offers/?offset=0&limit=40&query=" + quote(query) + "&currency=EUR"
+    url = ("https://www.olx.pt/api/v1/offers/"
+           "?offset=0&limit=40"
+           "&query=" + quote(query) +
+           "&currency=EUR"
+           "&sort_by=created_at%3Adesc")  # Ordena do mais recente para o mais antigo
     try:
         r = requests.get(url, headers=HEADERS_API, timeout=15)
         log("  API: HTTP " + str(r.status_code))
         if r.status_code != 200:
             return None
+
         data = r.json()
         ofertas = data.get("data", [])
         log("  API: " + str(len(ofertas)) + " ofertas recebidas")
+
         anuncios = []
         for o in ofertas:
             try:
                 titulo = o.get("title", "")
                 link = o.get("url", "")
                 aid = str(o.get("id", ""))
+                created_at = o.get("created_at") or o.get("last_refresh_time", "")
+
                 preco = None
                 for p in o.get("params", []):
                     if "price" in str(p.get("key", "")).lower():
                         preco = extrair_preco(p.get("value", {}).get("value", ""))
                         break
                 if preco is None:
-                    preco = extrair_preco(o.get("price", {}).get("value", "") if isinstance(o.get("price"), dict) else o.get("price", ""))
+                    p_raw = o.get("price", {})
+                    preco = extrair_preco(p_raw.get("value") if isinstance(p_raw, dict) else p_raw)
+
                 if titulo and link and aid:
-                    anuncios.append({"id": aid, "titulo": titulo, "preco": preco, "link": link})
+                    anuncios.append({
+                        "id": aid,
+                        "titulo": titulo,
+                        "preco": preco,
+                        "link": link,
+                        "created_at": created_at,
+                    })
             except Exception:
                 pass
+
         return anuncios
+
     except Exception as e:
         log("  API erro: " + str(e))
         return None
@@ -176,16 +230,18 @@ def buscar_nextdata(query):
         log("  HTML: HTTP " + str(r.status_code))
         if r.status_code != 200:
             return None
-        match = re.search(r'<script id="__NEXT_DATA__" type="application/json">(.*?)</script>', r.text, re.DOTALL)
+
+        match = re.search(
+            r'<script id="__NEXT_DATA__" type="application/json">(.*?)</script>',
+            r.text, re.DOTALL
+        )
         if not match:
             log("  __NEXT_DATA__ nao encontrado")
-            # Debug: mostra primeiros 300 chars do HTML
-            log("  HTML inicio: " + r.text[:300].replace("\n", " "))
             return None
+
         data = json.loads(match.group(1))
         log("  __NEXT_DATA__ encontrado!")
-        anuncios = []
-        # Tenta varios caminhos no JSON
+
         ads = []
         try:
             pp = data["props"]["pageProps"]
@@ -195,23 +251,36 @@ def buscar_nextdata(query):
                    [])
         except Exception:
             pass
+
         log("  Anuncios no JSON: " + str(len(ads)))
+        anuncios = []
         for ad in ads:
             try:
                 titulo = ad.get("title", "")
                 link = ad.get("url", "")
                 aid = str(ad.get("id", ""))
+                created_at = ad.get("created_at") or ad.get("last_refresh_time", "")
+
                 preco = None
                 p_raw = ad.get("price", {})
                 if isinstance(p_raw, dict):
                     preco = extrair_preco(p_raw.get("value") or p_raw.get("regularPrice", {}).get("value"))
                 else:
                     preco = extrair_preco(p_raw)
+
                 if titulo and link and aid:
-                    anuncios.append({"id": aid, "titulo": titulo, "preco": preco, "link": link})
+                    anuncios.append({
+                        "id": aid,
+                        "titulo": titulo,
+                        "preco": preco,
+                        "link": link,
+                        "created_at": created_at,
+                    })
             except Exception:
                 pass
+
         return anuncios
+
     except Exception as e:
         log("  HTML erro: " + str(e))
         return None
@@ -235,28 +304,43 @@ def processar_modelo(modelo, query, historico):
 
     log("  " + str(len(anuncios)) + " anuncio(s) encontrado(s).")
     enviados = 0
-    novos = 0
 
     for anuncio in anuncios:
         aid = str(anuncio["id"])
 
+        # Ja visto antes?
         if aid in historico:
             continue
 
+        # Marca como visto SEMPRE (mesmo que nao notifique)
         historico.append(aid)
-        novos += 1
 
-        # Envia para TODOS os anuncios novos
-        msg = montar_mensagem(modelo, anuncio["titulo"], anuncio["preco"], anuncio["link"])
+        # Verifica se foi publicado nos ultimos MINUTOS_MAXIMO minutos
+        created_at = anuncio.get("created_at", "")
+        recente = anuncio_e_recente(created_at)
+
+        if not recente:
+            log("  Ignorado (muito antigo): " + anuncio["titulo"])
+            continue
+
+        # Calcula minutos para mostrar na mensagem
+        minutos = None
+        try:
+            ts = created_at.replace("Z", "+00:00")
+            criado_em = datetime.fromisoformat(ts)
+            minutos = (datetime.now(timezone.utc) - criado_em).total_seconds() / 60
+        except Exception:
+            pass
+
+        msg = montar_mensagem(modelo, anuncio["titulo"], anuncio["preco"], anuncio["link"], minutos)
         if enviar_telegram(msg):
             enviados += 1
-            log("  Enviado: " + anuncio["titulo"] + " | " + str(anuncio["preco"]) + "eur")
+            log("  Enviado: " + anuncio["titulo"])
         else:
-            log("  Falha Telegram: " + anuncio["titulo"])
+            log("  Falha Telegram.")
 
         time.sleep(1)
 
-    log("  Novos: " + str(novos) + " | Enviados: " + str(enviados))
     return enviados
 
 
@@ -266,8 +350,8 @@ def processar_modelo(modelo, query, historico):
 
 def main():
     log("=" * 50)
-    log("MONITOR DE iPHONES - TODOS OS ANUNCIOS")
-    log(str(len(MODELOS)) + " modelos a monitorizar")
+    log("MONITOR iPHONES - anuncios dos ultimos " + str(MINUTOS_MAXIMO) + " min")
+    log(str(len(MODELOS)) + " modelos")
     log("=" * 50)
 
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
