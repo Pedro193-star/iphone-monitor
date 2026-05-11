@@ -25,10 +25,7 @@ TELEGRAM_CHAT_ID   = os.environ.get("TELEGRAM_CHAT_ID", "")
 FICHEIRO_HISTORICO = "historico.json"
 FICHEIRO_MEDIAS    = "medias.json"
 
-# So notifica anuncios publicados nos ultimos X minutos
-MINUTOS_MAXIMO = 6
-
-# Quantas horas a media e valida antes de recalcular
+MINUTOS_MAXIMO     = 8
 HORAS_VALIDADE_MEDIA = 6
 
 MODELOS = {
@@ -114,34 +111,25 @@ def guardar_medias(medias):
 
 
 def obter_media(modelo, anuncios, medias):
-    """
-    Devolve a media de mercado para o modelo.
-    Usa cache se ainda for valida (HORAS_VALIDADE_MEDIA).
-    Caso contrario recalcula a partir dos anuncios atuais.
-    """
     entrada = medias.get(modelo, {})
     timestamp = entrada.get("timestamp", "")
     valor = entrada.get("valor")
 
-    # Verifica se a media em cache ainda e valida
     if timestamp and valor:
         try:
             guardada = datetime.fromisoformat(timestamp)
             horas = (datetime.now() - guardada).total_seconds() / 3600
             if horas < HORAS_VALIDADE_MEDIA:
-                log("  Media em cache: " + str(round(valor)) + "eur (" + str(round(horas, 1)) + "h atras)")
+                log("  Media cache: " + str(round(valor)) + "eur")
                 return valor
         except Exception:
             pass
 
-    # Recalcula com os anuncios atuais
     precos = [a["preco"] for a in anuncios if a.get("preco") and 50 <= a["preco"] <= 5000]
-
     if len(precos) < 3:
-        log("  Amostras insuficientes para calcular media (" + str(len(precos)) + ")")
-        return valor  # Usa o valor antigo se houver
+        log("  Amostras insuficientes: " + str(len(precos)))
+        return valor
 
-    # Remove outliers (fora de 2 desvios padrao)
     media_bruta = statistics.mean(precos)
     if len(precos) > 2:
         desvio = statistics.stdev(precos)
@@ -153,7 +141,7 @@ def obter_media(modelo, anuncios, medias):
         "amostras": len(precos),
         "timestamp": datetime.now().isoformat(),
     }
-    log("  Media calculada: " + str(nova_media) + "eur (" + str(len(precos)) + " amostras)")
+    log("  Media nova: " + str(nova_media) + "eur (" + str(len(precos)) + " amostras)")
     return nova_media
 
 
@@ -177,45 +165,35 @@ def extrair_preco(valor):
 
 
 def minutos_desde(created_at_str):
-    """Devolve quantos minutos passaram desde created_at, ou None se falhar."""
     if not created_at_str:
         return None
     try:
-        ts = created_at_str.replace("Z", "+00:00")
+        ts = str(created_at_str).replace("Z", "+00:00")
         criado_em = datetime.fromisoformat(ts)
         return (datetime.now(timezone.utc) - criado_em).total_seconds() / 60
-    except Exception:
+    except Exception as e:
+        log("  Erro timestamp: " + str(e))
         return None
 
 
-def e_recente(created_at_str):
-    mins = minutos_desde(created_at_str)
-    if mins is None:
-        return True  # sem timestamp, aceita
-    return mins <= MINUTOS_MAXIMO
-
-
 # ----------------------------------------------------------------------
-# CLASSIFICACAO DO NEGOCIO
+# CLASSIFICACAO
 # ----------------------------------------------------------------------
 
 def classificar(preco, media):
-    """
-    Devolve (icone, label, desconto_pct) com base na diferenca ao preco medio.
-    """
     if media is None or media == 0:
-        return "\U0001f4f1", "Sem media disponivel", None
+        return "\U0001f4f1", "SEM MEDIA", None
 
-    diff_pct = ((media - preco) / media) * 100  # positivo = abaixo da media
+    diff_pct = ((media - preco) / media) * 100
 
     if diff_pct >= 25:
         return "\U0001f525\U0001f525", "EXCELENTE DEAL", diff_pct
     elif diff_pct >= 15:
         return "\U0001f525", "BOM DEAL", diff_pct
     elif diff_pct >= 0:
-        return "\U0001f7e1", "NA MEDIA — nao vale a pena", diff_pct
+        return "\U0001f7e1", "NA MEDIA - nao vale a pena", diff_pct
     else:
-        return "\U0001f534", "ACIMA DA MEDIA — nao vale a pena", diff_pct
+        return "\U0001f534", "ACIMA DA MEDIA - nao vale a pena", diff_pct
 
 
 # ----------------------------------------------------------------------
@@ -244,7 +222,8 @@ def montar_mensagem(modelo, titulo, preco, link, media, mins):
     tempo_txt = str(round(mins)) + " min atras" if mins is not None else "Agora"
 
     if diff_pct is not None:
-        diff_txt = ("-" if diff_pct >= 0 else "+") + str(round(abs(diff_pct), 1)) + "% vs media"
+        sinal = "-" if diff_pct >= 0 else "+"
+        diff_txt = sinal + str(round(abs(diff_pct), 1)) + "% vs media"
     else:
         diff_txt = ""
 
@@ -265,7 +244,7 @@ def montar_mensagem(modelo, titulo, preco, link, media, mins):
 
 
 # ----------------------------------------------------------------------
-# SCRAPING OLX
+# SCRAPING
 # ----------------------------------------------------------------------
 
 def buscar_api(query):
@@ -276,19 +255,38 @@ def buscar_api(query):
            "&sort_by=created_at%3Adesc")
     try:
         r = requests.get(url, headers=HEADERS_API, timeout=15)
-        log("  API: HTTP " + str(r.status_code))
+        log("  API HTTP: " + str(r.status_code))
         if r.status_code != 200:
             return None
+
         data = r.json()
         ofertas = data.get("data", [])
-        log("  API: " + str(len(ofertas)) + " ofertas")
+        log("  API ofertas: " + str(len(ofertas)))
+
+        # DEBUG: mostra campos do primeiro anuncio
+        if ofertas:
+            primeiro = ofertas[0]
+            log("  DEBUG campos: " + str(list(primeiro.keys())))
+            log("  DEBUG created_at: " + str(primeiro.get("created_at", "N/A")))
+            log("  DEBUG last_refresh: " + str(primeiro.get("last_refresh_time", "N/A")))
+            log("  DEBUG price: " + str(primeiro.get("price", "N/A")))
+
         anuncios = []
         for o in ofertas:
             try:
                 titulo = o.get("title", "")
                 link = o.get("url", "")
                 aid = str(o.get("id", ""))
-                created_at = o.get("created_at") or o.get("last_refresh_time", "")
+
+                # Tenta varias fontes de timestamp
+                created_at = (
+                    o.get("created_at") or
+                    o.get("last_refresh_time") or
+                    o.get("pushup_time") or
+                    ""
+                )
+
+                # Extrai preco de varias posicoes possiveis
                 preco = None
                 for p in o.get("params", []):
                     if "price" in str(p.get("key", "")).lower():
@@ -296,12 +294,24 @@ def buscar_api(query):
                         break
                 if preco is None:
                     p_raw = o.get("price", {})
-                    preco = extrair_preco(p_raw.get("value") if isinstance(p_raw, dict) else p_raw)
+                    if isinstance(p_raw, dict):
+                        preco = extrair_preco(p_raw.get("value") or p_raw.get("regularPrice", {}).get("value"))
+                    else:
+                        preco = extrair_preco(p_raw)
+
                 if titulo and link and aid:
-                    anuncios.append({"id": aid, "titulo": titulo, "preco": preco, "link": link, "created_at": created_at})
-            except Exception:
-                pass
+                    anuncios.append({
+                        "id": aid,
+                        "titulo": titulo,
+                        "preco": preco,
+                        "link": link,
+                        "created_at": created_at,
+                    })
+            except Exception as e:
+                log("  Erro oferta: " + str(e))
+
         return anuncios
+
     except Exception as e:
         log("  API erro: " + str(e))
         return None
@@ -312,29 +322,46 @@ def buscar_nextdata(query):
     url = "https://www.olx.pt/ads/q-" + slug + "/"
     try:
         r = requests.get(url, headers=HEADERS_HTML, timeout=20)
-        log("  HTML: HTTP " + str(r.status_code))
+        log("  HTML HTTP: " + str(r.status_code))
         if r.status_code != 200:
             return None
-        match = re.search(r'<script id="__NEXT_DATA__" type="application/json">(.*?)</script>', r.text, re.DOTALL)
+
+        match = re.search(
+            r'<script id="__NEXT_DATA__" type="application/json">(.*?)</script>',
+            r.text, re.DOTALL
+        )
         if not match:
             log("  __NEXT_DATA__ nao encontrado")
             return None
+
         data = json.loads(match.group(1))
         ads = []
         try:
             pp = data["props"]["pageProps"]
-            ads = (pp.get("ads") or pp.get("listing", {}).get("ads") or
-                   pp.get("initialState", {}).get("listing", {}).get("listing", {}).get("ads") or [])
+            ads = (pp.get("ads") or
+                   pp.get("listing", {}).get("ads") or
+                   pp.get("initialState", {}).get("listing", {}).get("listing", {}).get("ads") or
+                   [])
         except Exception:
             pass
-        log("  HTML: " + str(len(ads)) + " anuncios")
+
+        log("  HTML anuncios: " + str(len(ads)))
+
+        if ads:
+            log("  DEBUG HTML campos: " + str(list(ads[0].keys())))
+
         anuncios = []
         for ad in ads:
             try:
                 titulo = ad.get("title", "")
                 link = ad.get("url", "")
                 aid = str(ad.get("id", ""))
-                created_at = ad.get("created_at") or ad.get("last_refresh_time", "")
+                created_at = (
+                    ad.get("created_at") or
+                    ad.get("last_refresh_time") or
+                    ad.get("pushup_time") or
+                    ""
+                )
                 preco = None
                 p_raw = ad.get("price", {})
                 if isinstance(p_raw, dict):
@@ -346,6 +373,7 @@ def buscar_nextdata(query):
             except Exception:
                 pass
         return anuncios
+
     except Exception as e:
         log("  HTML erro: " + str(e))
         return None
@@ -364,40 +392,55 @@ def processar_modelo(modelo, query, historico, medias):
         anuncios = buscar_nextdata(query)
 
     if not anuncios:
-        log("  Sem anuncios encontrados.")
+        log("  Sem anuncios.")
         return 0
 
-    log("  " + str(len(anuncios)) + " anuncio(s) encontrado(s).")
+    log("  Total anuncios: " + str(len(anuncios)))
 
-    # Calcula/atualiza media de mercado com todos os anuncios da pagina
     media = obter_media(modelo, anuncios, medias)
 
+    # Conta anuncios por estado para debug
+    ja_vistos = 0
+    muito_antigos = 0
+    sem_preco = 0
     enviados = 0
+
     for anuncio in anuncios:
         aid = str(anuncio["id"])
 
         if aid in historico:
+            ja_vistos += 1
             continue
         historico.append(aid)
 
-        # Filtra por tempo de publicacao
+        # Verifica tempo
         mins = minutos_desde(anuncio.get("created_at", ""))
-        if mins is not None and mins > MINUTOS_MAXIMO:
-            continue
+
+        if mins is not None:
+            if mins > MINUTOS_MAXIMO:
+                muito_antigos += 1
+                continue
+        else:
+            log("  SEM TIMESTAMP: " + anuncio["titulo"][:50])
+            # Sem timestamp -> aceita o anuncio
 
         preco = anuncio.get("preco")
         if not preco:
+            sem_preco += 1
             continue
-
-        log("  Novo: " + anuncio["titulo"] + " | " + str(preco) + "eur")
 
         msg = montar_mensagem(modelo, anuncio["titulo"], preco, anuncio["link"], media, mins)
         if enviar_telegram(msg):
             enviados += 1
-            log("  Telegram enviado.")
+            log("  Enviado: " + anuncio["titulo"][:50] + " | " + str(preco) + "eur")
         else:
             log("  Falha Telegram.")
         time.sleep(1)
+
+    log("  Resultado: " + str(ja_vistos) + " ja vistos | " +
+        str(muito_antigos) + " muito antigos | " +
+        str(sem_preco) + " sem preco | " +
+        str(enviados) + " enviados")
 
     return enviados
 
@@ -408,7 +451,7 @@ def processar_modelo(modelo, query, historico, medias):
 
 def main():
     log("=" * 50)
-    log("MONITOR iPHONES - ultimos " + str(MINUTOS_MAXIMO) + " min + classificacao")
+    log("MONITOR iPHONES - ultimos " + str(MINUTOS_MAXIMO) + " min + media")
     log(str(len(MODELOS)) + " modelos")
     log("=" * 50)
 
