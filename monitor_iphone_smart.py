@@ -431,6 +431,11 @@ def processar_modelo(modelo, query, historico, medias):
         preco = anuncio.get("preco")
         if not preco:
             sem_preco += 1
+
+        # Filtra acessorios, capas e anuncios aleatorios
+        # Se o preco for 85% ou mais abaixo da media -> ignora
+        if media and ((media - preco) / media) * 100 >= 85:
+            log("  Ignorado (acessorio/spam " + str(preco) + "eur vs media " + str(round(media)) + "eur)")
             continue
 
         msg = montar_mensagem(modelo, anuncio["titulo"], preco, anuncio["link"], media, mins)
