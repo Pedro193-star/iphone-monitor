@@ -1,6 +1,6 @@
 """
 MONITOR DE iPHONES - OLX Portugal
-- So notifica anuncios publicados nos ultimos 8 minutos
+- So notifica anuncios publicados nos ultimos 5 minutos
 - Calcula media de mercado dinamicamente
 - Classifica cada anuncio vs a media
 """
