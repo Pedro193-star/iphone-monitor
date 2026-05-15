@@ -415,6 +415,12 @@ def processar_modelo(modelo, query, historico):
         if not preco:
             continue
 
+        # Filtra anuncios que nao sejam iPhones (ex: Redmi, carros, etc)
+        titulo_lower = anuncio["titulo"].lower()
+        if "iphone" not in titulo_lower:
+            log("  Ignorado (nao e iPhone): " + anuncio["titulo"][:40])
+            continue
+
         # Filtro de acessorios
         if ref_media and ((ref_media - preco) / ref_media) * 100 >= FILTRO_ACESSORIO_PCT:
             log("  Ignorado (acessorio " + str(preco) + "eur): " + anuncio["titulo"][:40])
