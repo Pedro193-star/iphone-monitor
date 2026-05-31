@@ -2,6 +2,7 @@
 MONITOR DE iPHONES - OLX Portugal
 - So notifica anuncios publicados nos ultimos 8 minutos
 - Compara preco com tabela de referencia por modelo e storage
+- Filtra por localizacao: raio de 20km a partir de Alges
 - Classifica: Excelente Negocio / Muito Bom Deal / Acima do Ideal
 """
 
@@ -10,6 +11,7 @@ import json
 import os
 import re
 import time
+import math
 from datetime import datetime, timezone
 from urllib.parse import quote
 
@@ -23,15 +25,29 @@ TELEGRAM_CHAT_ID   = os.environ.get("TELEGRAM_CHAT_ID", "")
 
 FICHEIRO_HISTORICO = "historico.json"
 MINUTOS_MAXIMO     = 8
-
-# Filtra acessorios/spam se preco for 85%+ abaixo da referencia media
 FILTRO_ACESSORIO_PCT = 85
-
-# Margem acima da referencia para "negociar" (em %)
-MARGEM_ACIMA = 5
-
-# Margem abaixo da referencia para "excelente negocio" (em %)
+MARGEM_ACIMA  = 5
 MARGEM_ABAIXO = 10
+
+# ----------------------------------------------------------------------
+# FILTRO DE LOCALIZACAO — centro: Alges, raio: 20km
+# ----------------------------------------------------------------------
+CENTRO_LAT = 38.7057
+CENTRO_LON = -9.2311
+RAIO_KM    = 20
+
+# Usado quando a API nao devolve coordenadas GPS
+LOCAIS_ACEITES = [
+    "lisboa", "lisbon", "alges", "algés", "oeiras", "cascais",
+    "amadora", "odivelas", "loures", "sintra", "almada", "seixal",
+    "barreiro", "estoril", "belem", "belém", "ajuda", "benfica",
+    "carnaxide", "queijas", "linda-a-velha", "porto salvo",
+    "paco de arcos", "paço de arcos", "caxias", "barcarena",
+    "monte estoril", "alcabideche", "queluz", "massamá", "massama",
+    "damaia", "pontinha", "sacavém", "sacavem", "moscavide",
+    "olivais", "oriente", "parque das nacoes", "parque das nações",
+    "mafra", "sesimbra", "palmela", "setúbal", "setubal",
+]
 
 
 # ======================================================================
@@ -181,7 +197,6 @@ def extrair_preco(valor):
 
 
 def extrair_storage(titulo):
-    """Extrai a capacidade de armazenamento do titulo do anuncio."""
     t = titulo.lower()
     if "1024" in t or "1 024" in t or "1tb" in t or "1 tb" in t:
         return 1024
@@ -197,10 +212,6 @@ def extrair_storage(titulo):
 
 
 def obter_preco_ref(modelo, storage):
-    """
-    Devolve o preco de referencia para o modelo e storage.
-    Se o storage nao for reconhecido, usa a media de todos os storages.
-    """
     tabela = PRECOS.get(modelo)
     if not tabela:
         return None
@@ -221,19 +232,66 @@ def minutos_desde(created_at_str):
 
 
 # ----------------------------------------------------------------------
+# LOCALIZACAO
+# ----------------------------------------------------------------------
+
+def haversine(lat1, lon1, lat2, lon2):
+    """Calcula distancia em km entre dois pontos GPS."""
+    R = 6371
+    dlat = math.radians(lat2 - lat1)
+    dlon = math.radians(lon2 - lon1)
+    a = math.sin(dlat/2)**2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon/2)**2
+    return R * 2 * math.asin(math.sqrt(a))
+
+
+def verificar_localizacao(anuncio):
+    """
+    Devolve (aceite, distancia_km, nome_local).
+    - Se tem coordenadas GPS: calcula distancia real
+    - Se nao tem: usa lista de localidades aceites
+    - Se sem info: aceita (nao penaliza quem nao tem localizacao)
+    """
+    # Tenta coordenadas GPS
+    mapa = anuncio.get("map", {})
+    if isinstance(mapa, dict):
+        lat = mapa.get("lat")
+        lon = mapa.get("lon")
+        if lat and lon:
+            try:
+                dist = haversine(CENTRO_LAT, CENTRO_LON, float(lat), float(lon))
+                aceite = dist <= RAIO_KM
+                return aceite, round(dist, 1), None
+            except Exception:
+                pass
+
+    # Tenta nome da localidade
+    local_raw = ""
+    loc = anuncio.get("location", {})
+    if isinstance(loc, dict):
+        cidade = loc.get("city", {})
+        if isinstance(cidade, dict):
+            local_raw = cidade.get("name", "")
+        if not local_raw:
+            local_raw = loc.get("name", "")
+
+    if local_raw:
+        local_lower = local_raw.lower()
+        aceite = any(l in local_lower for l in LOCAIS_ACEITES)
+        return aceite, None, local_raw
+
+    # Sem informacao de localizacao: aceita por defeito
+    return True, None, None
+
+
+# ----------------------------------------------------------------------
 # CLASSIFICACAO
 # ----------------------------------------------------------------------
 
 def classificar(preco, preco_ref):
-    """
-    > MARGEM_ACIMA% acima  -> Acima do ideal, negoceia
-    dentro de +-margem     -> Muito bom deal
-    > MARGEM_ABAIXO% baixo -> Excelente negocio
-    """
     if preco_ref is None:
         return "\U0001f4f1", "SEM REFERENCIA", None
 
-    diff_pct = ((preco_ref - preco) / preco_ref) * 100  # positivo = abaixo da ref
+    diff_pct = ((preco_ref - preco) / preco_ref) * 100
 
     if diff_pct >= MARGEM_ABAIXO:
         return "\U0001f525\U0001f525", "EXCELENTE NEGOCIO", diff_pct
@@ -262,11 +320,18 @@ def enviar_telegram(texto):
         return False
 
 
-def montar_mensagem(modelo, titulo, preco, link, storage, icone, label, diff_pct, preco_ref, mins):
+def montar_mensagem(modelo, titulo, preco, link, storage, icone, label, diff_pct, preco_ref, mins, dist_km, local_nome):
     preco_txt   = str(preco) + "\u20ac"
     ref_txt     = str(preco_ref) + "\u20ac" if preco_ref else "N/D"
     storage_txt = str(storage) + "GB" if storage else "storage desconhecido"
     tempo_txt   = str(round(mins)) + " min atras" if mins is not None else "Agora"
+
+    if dist_km is not None:
+        local_txt = str(dist_km) + "km de Alges"
+    elif local_nome:
+        local_txt = local_nome
+    else:
+        local_txt = "Localizacao nao disponivel"
 
     if diff_pct is not None:
         sinal    = "-" if diff_pct >= 0 else "+"
@@ -278,12 +343,13 @@ def montar_mensagem(modelo, titulo, preco, link, storage, icone, label, diff_pct
         icone + " <b>" + label + "</b>\n\n"
         "\U0001f4f1 <b>" + modelo + "</b> | " + storage_txt + "\n"
         "\U0001f4cc <b>" + titulo + "</b>\n\n"
-        "\U0001f4b6 <b>Preco anuncio:</b> " + preco_txt + "\n"
-        "\U0001f3af <b>Preco referencia:</b> " + ref_txt + "\n"
+        "\U0001f4b6 <b>Preco:</b> " + preco_txt + "\n"
+        "\U0001f3af <b>Referencia:</b> " + ref_txt + "\n"
     )
     if diff_txt:
         msg += "\U0001f4c9 <b>Diferenca:</b> " + diff_txt + "\n"
     msg += (
+        "\U0001f4cd <b>Local:</b> " + local_txt + "\n"
         "\U0001f55b <b>Publicado:</b> " + tempo_txt + "\n\n"
         "\U0001f517 <a href=\"" + link + "\">Ver anuncio no OLX</a>"
     )
@@ -324,7 +390,15 @@ def buscar_api(query):
                     p_raw = o.get("price", {})
                     preco = extrair_preco(p_raw.get("value") if isinstance(p_raw, dict) else p_raw)
                 if titulo and link and aid:
-                    anuncios.append({"id": aid, "titulo": titulo, "preco": preco, "link": link, "created_at": created_at})
+                    anuncios.append({
+                        "id": aid,
+                        "titulo": titulo,
+                        "preco": preco,
+                        "link": link,
+                        "created_at": created_at,
+                        "map": o.get("map", {}),
+                        "location": o.get("location", {}),
+                    })
             except Exception:
                 pass
         return anuncios
@@ -367,7 +441,15 @@ def buscar_nextdata(query):
                 else:
                     preco = extrair_preco(p_raw)
                 if titulo and link and aid:
-                    anuncios.append({"id": aid, "titulo": titulo, "preco": preco, "link": link, "created_at": created_at})
+                    anuncios.append({
+                        "id": aid,
+                        "titulo": titulo,
+                        "preco": preco,
+                        "link": link,
+                        "created_at": created_at,
+                        "map": ad.get("map", {}),
+                        "location": ad.get("location", {}),
+                    })
             except Exception:
                 pass
         return anuncios
@@ -415,9 +497,8 @@ def processar_modelo(modelo, query, historico):
         if not preco:
             continue
 
-        # Filtra anuncios que nao sejam iPhones (ex: Redmi, carros, etc)
-        titulo_lower = anuncio["titulo"].lower()
-        if "iphone" not in titulo_lower:
+        # Filtro: so iPhones
+        if "iphone" not in anuncio["titulo"].lower():
             log("  Ignorado (nao e iPhone): " + anuncio["titulo"][:40])
             continue
 
@@ -426,16 +507,25 @@ def processar_modelo(modelo, query, historico):
             log("  Ignorado (acessorio " + str(preco) + "eur): " + anuncio["titulo"][:40])
             continue
 
-        # Detecta storage e obtem preco de referencia
-        storage = extrair_storage(anuncio["titulo"])
-        preco_ref = obter_preco_ref(modelo, storage)
+        # Filtro de localizacao
+        aceite, dist_km, local_nome = verificar_localizacao(anuncio)
+        if not aceite:
+            info = str(dist_km) + "km" if dist_km else str(local_nome)
+            log("  Ignorado (fora do raio " + info + "): " + anuncio["titulo"][:40])
+            continue
 
+        # Classificacao por preco
+        storage   = extrair_storage(anuncio["titulo"])
+        preco_ref = obter_preco_ref(modelo, storage)
         icone, label, diff_pct = classificar(preco, preco_ref)
 
-        log("  " + label + ": " + anuncio["titulo"][:40] + " | " + str(preco) + "eur (ref: " + str(preco_ref) + "eur)")
+        log("  " + label + " | " + anuncio["titulo"][:35] + " | " + str(preco) + "eur | local: " + str(local_nome or dist_km))
 
-        msg = montar_mensagem(modelo, anuncio["titulo"], preco, anuncio["link"],
-                              storage, icone, label, diff_pct, preco_ref, mins)
+        msg = montar_mensagem(
+            modelo, anuncio["titulo"], preco, anuncio["link"],
+            storage, icone, label, diff_pct, preco_ref,
+            mins, dist_km, local_nome
+        )
         if enviar_telegram(msg):
             enviados += 1
             log("  Telegram enviado.")
@@ -452,7 +542,7 @@ def processar_modelo(modelo, query, historico):
 
 def main():
     log("=" * 55)
-    log("MONITOR iPHONES - ultimos " + str(MINUTOS_MAXIMO) + " min + tabela de precos")
+    log("MONITOR iPHONES - " + str(RAIO_KM) + "km de Alges | ultimos " + str(MINUTOS_MAXIMO) + " min")
     log(str(len(MODELOS)) + " modelos monitorizados")
     log("=" * 55)
 
