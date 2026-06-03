@@ -1,9 +1,10 @@
 """
-MONITOR DE iPHONES - OLX Portugal
-- So notifica anuncios publicados nos ultimos 8 minutos
-- Compara preco com tabela de referencia por modelo e storage
-- Filtra por localizacao: raio de 20km a partir de Alges
-- Classifica: Excelente Negocio / Muito Bom Deal / Acima do Ideal
+OLX TRACKER — Monitor de iPhones
+Versão com:
+  1. Detecção rigorosa do modelo real pelo título
+  2. Filtro anti-lixo com palavras proibidas
+  3. Janela de tempo alargada (60 min) para atrasos do GitHub
+  4. Mensagem Telegram limpa e rápida de ler
 """
 
 import requests
@@ -23,20 +24,35 @@ from urllib.parse import quote
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID   = os.environ.get("TELEGRAM_CHAT_ID", "")
 
-FICHEIRO_HISTORICO = "historico.json"
-MINUTOS_MAXIMO     = 8
-FILTRO_ACESSORIO_PCT = 85
-MARGEM_ACIMA  = 5
-MARGEM_ABAIXO = 10
+FICHEIRO_HISTORICO   = "historico.json"
+MINUTOS_MAXIMO       = 60    # Rede de segurança para atrasos do GitHub Actions
+FILTRO_ACESSORIO_PCT = 85    # Ignora se preço > 85% abaixo da referência média
+MARGEM_ACIMA         = 5     # % acima da referência → "tenta negociar"
+MARGEM_ABAIXO        = 10    # % abaixo da referência → "excelente negócio"
 
 # ----------------------------------------------------------------------
-# FILTRO DE LOCALIZACAO — centro: Alges, raio: 20km
+# FILTRO ANTI-LIXO — títulos com estas palavras são ignorados
+# ----------------------------------------------------------------------
+PALAVRAS_EXCLUIDAS = [
+    "capa", "capas", "capinha", "capinhas",
+    "pelicula", "peliculas", "película", "películas",
+    "ecra", "ecras", "ecrã", "ecrãs", "display",
+    "bateria", "baterias",
+    "pecas", "peças",
+    "caixa", "vazia", "vazio",
+    "avariado", "avariada", "avaria",
+    "partido", "partida", "partidos", "partidas",
+    "bloqueado", "bloqueada",
+    "icloud",
+]
+
+# ----------------------------------------------------------------------
+# FILTRO DE LOCALIZACAO — Centro: Algés | Raio: 20 km
 # ----------------------------------------------------------------------
 CENTRO_LAT = 38.7057
 CENTRO_LON = -9.2311
 RAIO_KM    = 20
 
-# Usado quando a API nao devolve coordenadas GPS
 LOCAIS_ACEITES = [
     "lisboa", "lisbon", "alges", "algés", "oeiras", "cascais",
     "amadora", "odivelas", "loures", "sintra", "almada", "seixal",
@@ -55,61 +71,36 @@ LOCAIS_ACEITES = [
 # ======================================================================
 
 PRECOS = {
-    "iPhone 13 Mini": {
-        128: 154, 256: 227, 512: 353,
-    },
-    "iPhone 13": {
-        128: 195, 256: 236, 512: 300,
-    },
-    "iPhone 13 Pro": {
-        128: 302, 256: 332, 512: 368, 1024: 434,
-    },
-    "iPhone 13 Pro Max": {
-        128: 309, 256: 349, 512: 389, 1024: 464,
-    },
-    "iPhone 14": {
-        128: 247, 256: 304, 512: 391,
-    },
-    "iPhone 14 Plus": {
-        128: 298, 256: 347, 512: 417,
-    },
-    "iPhone 14 Pro": {
-        128: 390, 256: 428, 512: 502, 1024: 533,
-    },
-    "iPhone 14 Pro Max": {
-        128: 436, 256: 474, 512: 547, 1024: 611,
-    },
-    "iPhone 15": {
-        128: 370, 256: 440, 512: 515,
-    },
-    "iPhone 15 Plus": {
-        128: 381, 256: 467, 512: 580,
-    },
-    "iPhone 15 Pro": {
-        128: 470, 256: 520, 512: 569, 1024: 670,
-    },
-    "iPhone 15 Pro Max": {
-        256: 551, 512: 605, 1024: 630,
-    },
-    "iPhone 16": {
-        256: 511, 512: 604, 1024: 670,
-    },
-    "iPhone 16e": {
-        128: 355, 256: 429, 512: 535,
-    },
-    "iPhone 16 Plus": {
-        128: 545, 256: 640, 512: 725,
-    },
-    "iPhone 16 Pro": {
-        128: 667, 256: 702, 512: 820, 1024: 930,
-    },
-    "iPhone 16 Pro Max": {
-        256: 746, 512: 831, 1024: 960,
-    },
+    "iPhone 13 Mini":    {128: 154,  256: 227,  512: 353},
+    "iPhone 13":         {128: 195,  256: 236,  512: 300},
+    "iPhone 13 Pro":     {128: 302,  256: 332,  512: 368,  1024: 434},
+    "iPhone 13 Pro Max": {128: 309,  256: 349,  512: 389,  1024: 464},
+    "iPhone 14":         {128: 247,  256: 304,  512: 391},
+    "iPhone 14 Plus":    {128: 298,  256: 347,  512: 417},
+    "iPhone 14 Pro":     {128: 390,  256: 428,  512: 502,  1024: 533},
+    "iPhone 14 Pro Max": {128: 436,  256: 474,  512: 547,  1024: 611},
+    "iPhone 15":         {128: 370,  256: 440,  512: 515},
+    "iPhone 15 Plus":    {128: 381,  256: 467,  512: 580},
+    "iPhone 15 Pro":     {128: 470,  256: 520,  512: 569,  1024: 670},
+    "iPhone 15 Pro Max": {256: 551,  512: 605,  1024: 630},
+    "iPhone 16":         {256: 511,  512: 604,  1024: 670},
+    "iPhone 16e":        {128: 355,  256: 429,  512: 535},
+    "iPhone 16 Plus":    {128: 545,  256: 640,  512: 725},
+    "iPhone 16 Pro":     {128: 667,  256: 702,  512: 820,  1024: 930},
+    "iPhone 16 Pro Max": {256: 746,  512: 831,  1024: 960},
 }
 
+# Ordem de prioridade para detecção do modelo real no título
+# (do mais específico para o menos específico)
+MODELOS_PRIORIDADE = [
+    "iPhone 16 Pro Max", "iPhone 16 Pro", "iPhone 16 Plus", "iPhone 16e", "iPhone 16",
+    "iPhone 15 Pro Max", "iPhone 15 Pro", "iPhone 15 Plus", "iPhone 15",
+    "iPhone 14 Pro Max", "iPhone 14 Pro", "iPhone 14 Plus", "iPhone 14",
+    "iPhone 13 Pro Max", "iPhone 13 Pro", "iPhone 13 Mini", "iPhone 13",
+]
+
 # ======================================================================
-#  MODELOS A MONITORIZAR
+#  MODELOS E QUERIES DE PESQUISA
 # ======================================================================
 
 MODELOS = {
@@ -232,11 +223,52 @@ def minutos_desde(created_at_str):
 
 
 # ----------------------------------------------------------------------
+# DETECCAO RIGOROSA DO MODELO REAL
+# ----------------------------------------------------------------------
+
+def detectar_modelo_real(titulo):
+    """
+    Analisa o título e devolve o modelo iPhone mais específico encontrado.
+    Itera por MODELOS_PRIORIDADE do mais específico para o menos específico,
+    evitando classificar um 'Pro Max' como modelo base.
+    Devolve None se não encontrar nenhum modelo reconhecido.
+    """
+    titulo_lower = titulo.lower()
+
+    if "iphone" not in titulo_lower:
+        return None
+
+    for modelo in MODELOS_PRIORIDADE:
+        # Constrói padrão de busca flexível (ex: "iphone 15 pro max")
+        padrao = modelo.lower().replace(" ", r"[\s\-]+")
+        if re.search(padrao, titulo_lower):
+            return modelo
+
+    return None
+
+
+# ----------------------------------------------------------------------
+# FILTRO ANTI-LIXO
+# ----------------------------------------------------------------------
+
+def titulo_tem_palavra_proibida(titulo):
+    """
+    Devolve True se o título contiver alguma palavra da lista PALAVRAS_EXCLUIDAS.
+    Usa \b para corresponder apenas palavras completas.
+    """
+    titulo_lower = titulo.lower()
+    for palavra in PALAVRAS_EXCLUIDAS:
+        padrao = r"\b" + re.escape(palavra) + r"\b"
+        if re.search(padrao, titulo_lower):
+            return True, palavra
+    return False, None
+
+
+# ----------------------------------------------------------------------
 # LOCALIZACAO
 # ----------------------------------------------------------------------
 
 def haversine(lat1, lon1, lat2, lon2):
-    """Calcula distancia em km entre dois pontos GPS."""
     R = 6371
     dlat = math.radians(lat2 - lat1)
     dlon = math.radians(lon2 - lon1)
@@ -247,11 +279,9 @@ def haversine(lat1, lon1, lat2, lon2):
 def verificar_localizacao(anuncio):
     """
     Devolve (aceite, distancia_km, nome_local).
-    - Se tem coordenadas GPS: calcula distancia real
-    - Se nao tem: usa lista de localidades aceites
-    - Se sem info: aceita (nao penaliza quem nao tem localizacao)
+    GPS tem prioridade. Se não houver, usa whitelist de nomes.
+    Se sem info, aceita por defeito.
     """
-    # Tenta coordenadas GPS
     mapa = anuncio.get("map", {})
     if isinstance(mapa, dict):
         lat = mapa.get("lat")
@@ -259,14 +289,12 @@ def verificar_localizacao(anuncio):
         if lat and lon:
             try:
                 dist = haversine(CENTRO_LAT, CENTRO_LON, float(lat), float(lon))
-                aceite = dist <= RAIO_KM
-                return aceite, round(dist, 1), None
+                return dist <= RAIO_KM, round(dist, 1), None
             except Exception:
                 pass
 
-    # Tenta nome da localidade
-    local_raw = ""
     loc = anuncio.get("location", {})
+    local_raw = ""
     if isinstance(loc, dict):
         cidade = loc.get("city", {})
         if isinstance(cidade, dict):
@@ -275,12 +303,10 @@ def verificar_localizacao(anuncio):
             local_raw = loc.get("name", "")
 
     if local_raw:
-        local_lower = local_raw.lower()
-        aceite = any(l in local_lower for l in LOCAIS_ACEITES)
+        aceite = any(l in local_raw.lower() for l in LOCAIS_ACEITES)
         return aceite, None, local_raw
 
-    # Sem informacao de localizacao: aceita por defeito
-    return True, None, None
+    return True, None, None  # Sem info → aceita
 
 
 # ----------------------------------------------------------------------
@@ -320,38 +346,36 @@ def enviar_telegram(texto):
         return False
 
 
-def montar_mensagem(modelo, titulo, preco, link, storage, icone, label, diff_pct, preco_ref, mins, dist_km, local_nome):
+def montar_mensagem(modelo_real, titulo, preco, link, storage, icone, label, diff_pct, preco_ref, dist_km, local_nome):
     preco_txt   = str(preco) + "\u20ac"
     ref_txt     = str(preco_ref) + "\u20ac" if preco_ref else "N/D"
-    storage_txt = str(storage) + "GB" if storage else "storage desconhecido"
-    tempo_txt   = str(round(mins)) + " min atras" if mins is not None else "Agora"
+    storage_txt = str(storage) + "GB" if storage else "?"
 
     if dist_km is not None:
         local_txt = str(dist_km) + "km de Alges"
     elif local_nome:
         local_txt = local_nome
     else:
-        local_txt = "Localizacao nao disponivel"
+        local_txt = "N/D"
 
     if diff_pct is not None:
         sinal    = "-" if diff_pct >= 0 else "+"
-        diff_txt = sinal + str(round(abs(diff_pct), 1)) + "% vs referencia"
+        diff_txt = sinal + str(round(abs(diff_pct), 1)) + "% vs ref"
     else:
         diff_txt = ""
 
     msg = (
         icone + " <b>" + label + "</b>\n\n"
-        "\U0001f4f1 <b>" + modelo + "</b> | " + storage_txt + "\n"
+        "\U0001f4f1 <b>" + modelo_real + "</b> | " + storage_txt + "\n"
         "\U0001f4cc <b>" + titulo + "</b>\n\n"
         "\U0001f4b6 <b>Preco:</b> " + preco_txt + "\n"
-        "\U0001f3af <b>Referencia:</b> " + ref_txt + "\n"
+        "\U0001f3af <b>Ref:</b> " + ref_txt
     )
     if diff_txt:
-        msg += "\U0001f4c9 <b>Diferenca:</b> " + diff_txt + "\n"
+        msg += "  (" + diff_txt + ")"
     msg += (
-        "\U0001f4cd <b>Local:</b> " + local_txt + "\n"
-        "\U0001f55b <b>Publicado:</b> " + tempo_txt + "\n\n"
-        "\U0001f517 <a href=\"" + link + "\">Ver anuncio no OLX</a>"
+        "\n\U0001f4cd <b>Local:</b> " + local_txt + "\n\n"
+        "\U0001f517 <a href=\"" + link + "\">Ver no OLX</a>"
     )
     return msg
 
@@ -378,9 +402,10 @@ def buscar_api(query):
         for o in ofertas:
             try:
                 titulo = o.get("title", "")
-                link = o.get("url", "")
-                aid = str(o.get("id", ""))
-                created_at = o.get("created_at") or o.get("last_refresh_time") or o.get("pushup_time") or ""
+                link   = o.get("url", "")
+                aid    = str(o.get("id", ""))
+                created_at = (o.get("created_at") or o.get("last_refresh_time")
+                              or o.get("pushup_time") or "")
                 preco = None
                 for p in o.get("params", []):
                     if "price" in str(p.get("key", "")).lower():
@@ -391,13 +416,9 @@ def buscar_api(query):
                     preco = extrair_preco(p_raw.get("value") if isinstance(p_raw, dict) else p_raw)
                 if titulo and link and aid:
                     anuncios.append({
-                        "id": aid,
-                        "titulo": titulo,
-                        "preco": preco,
-                        "link": link,
-                        "created_at": created_at,
-                        "map": o.get("map", {}),
-                        "location": o.get("location", {}),
+                        "id": aid, "titulo": titulo, "preco": preco,
+                        "link": link, "created_at": created_at,
+                        "map": o.get("map", {}), "location": o.get("location", {}),
                     })
             except Exception:
                 pass
@@ -409,19 +430,22 @@ def buscar_api(query):
 
 def buscar_nextdata(query):
     slug = query.replace(" ", "-")
-    url = "https://www.olx.pt/ads/q-" + slug + "/"
+    url  = "https://www.olx.pt/ads/q-" + slug + "/"
     try:
         r = requests.get(url, headers=HEADERS_HTML, timeout=20)
         log("  HTML: HTTP " + str(r.status_code))
         if r.status_code != 200:
             return None
-        match = re.search(r'<script id="__NEXT_DATA__" type="application/json">(.*?)</script>', r.text, re.DOTALL)
+        match = re.search(
+            r'<script id="__NEXT_DATA__" type="application/json">(.*?)</script>',
+            r.text, re.DOTALL
+        )
         if not match:
             return None
         data = json.loads(match.group(1))
-        ads = []
+        ads  = []
         try:
-            pp = data["props"]["pageProps"]
+            pp  = data["props"]["pageProps"]
             ads = (pp.get("ads") or pp.get("listing", {}).get("ads") or
                    pp.get("initialState", {}).get("listing", {}).get("listing", {}).get("ads") or [])
         except Exception:
@@ -431,8 +455,8 @@ def buscar_nextdata(query):
         for ad in ads:
             try:
                 titulo = ad.get("title", "")
-                link = ad.get("url", "")
-                aid = str(ad.get("id", ""))
+                link   = ad.get("url", "")
+                aid    = str(ad.get("id", ""))
                 created_at = ad.get("created_at") or ad.get("last_refresh_time") or ""
                 preco = None
                 p_raw = ad.get("price", {})
@@ -442,13 +466,9 @@ def buscar_nextdata(query):
                     preco = extrair_preco(p_raw)
                 if titulo and link and aid:
                     anuncios.append({
-                        "id": aid,
-                        "titulo": titulo,
-                        "preco": preco,
-                        "link": link,
-                        "created_at": created_at,
-                        "map": ad.get("map", {}),
-                        "location": ad.get("location", {}),
+                        "id": aid, "titulo": titulo, "preco": preco,
+                        "link": link, "created_at": created_at,
+                        "map": ad.get("map", {}), "location": ad.get("location", {}),
                     })
             except Exception:
                 pass
@@ -462,8 +482,8 @@ def buscar_nextdata(query):
 # PROCESSAMENTO
 # ----------------------------------------------------------------------
 
-def processar_modelo(modelo, query, historico):
-    log("--- " + modelo + " ---")
+def processar_modelo(query_modelo, query, historico):
+    log("--- " + query_modelo + " ---")
 
     anuncios = buscar_api(query)
     if anuncios is None:
@@ -476,61 +496,76 @@ def processar_modelo(modelo, query, historico):
 
     log("  " + str(len(anuncios)) + " anuncio(s)")
 
-    tabela = PRECOS.get(modelo, {})
-    ref_media = round(sum(tabela.values()) / len(tabela)) if tabela else None
-
     enviados = 0
 
     for anuncio in anuncios:
         aid = str(anuncio["id"])
 
+        # Já visto → salta (sem adicionar de novo ao histórico)
         if aid in historico:
             continue
+
+        # Marca como visto imediatamente (evita duplicados mesmo que filtre)
         historico.append(aid)
 
-        # Filtro de tempo
+        titulo = anuncio["titulo"]
+
+        # ── 1. FILTRO ANTI-LIXO ──────────────────────────────────────
+        proibida, palavra = titulo_tem_palavra_proibida(titulo)
+        if proibida:
+            log("  [LIXO] '" + palavra + "' em: " + titulo[:50])
+            continue
+
+        # ── 2. DETECCAO DO MODELO REAL ────────────────────────────────
+        modelo_real = detectar_modelo_real(titulo)
+        if modelo_real is None:
+            log("  [SKIP] Modelo nao reconhecido: " + titulo[:50])
+            continue
+
+        # ── 3. FILTRO DE TEMPO ────────────────────────────────────────
         mins = minutos_desde(anuncio.get("created_at", ""))
         if mins is not None and mins > MINUTOS_MAXIMO:
             continue
 
+        # ── 4. PRECO ──────────────────────────────────────────────────
         preco = anuncio.get("preco")
         if not preco:
             continue
 
-        # Filtro: so iPhones
-        if "iphone" not in anuncio["titulo"].lower():
-            log("  Ignorado (nao e iPhone): " + anuncio["titulo"][:40])
-            continue
-
-        # Filtro de acessorios
+        # ── 5. FILTRO DE ACESSORIOS (preco absurdo) ───────────────────
+        tabela_real = PRECOS.get(modelo_real, {})
+        ref_media   = round(sum(tabela_real.values()) / len(tabela_real)) if tabela_real else None
         if ref_media and ((ref_media - preco) / ref_media) * 100 >= FILTRO_ACESSORIO_PCT:
-            log("  Ignorado (acessorio " + str(preco) + "eur): " + anuncio["titulo"][:40])
+            log("  [SPAM] " + str(preco) + "eur demasiado baixo: " + titulo[:40])
             continue
 
-        # Filtro de localizacao
+        # ── 6. FILTRO DE LOCALIZACAO ──────────────────────────────────
         aceite, dist_km, local_nome = verificar_localizacao(anuncio)
         if not aceite:
             info = str(dist_km) + "km" if dist_km else str(local_nome)
-            log("  Ignorado (fora do raio " + info + "): " + anuncio["titulo"][:40])
+            log("  [GEO] Fora do raio (" + info + "): " + titulo[:40])
             continue
 
-        # Classificacao por preco
-        storage   = extrair_storage(anuncio["titulo"])
-        preco_ref = obter_preco_ref(modelo, storage)
+        # ── 7. CLASSIFICACAO E ENVIO ──────────────────────────────────
+        storage   = extrair_storage(titulo)
+        preco_ref = obter_preco_ref(modelo_real, storage)
         icone, label, diff_pct = classificar(preco, preco_ref)
 
-        log("  " + label + " | " + anuncio["titulo"][:35] + " | " + str(preco) + "eur | local: " + str(local_nome or dist_km))
+        log("  [OK] " + modelo_real + " | " + titulo[:35] +
+            " | " + str(preco) + "eur | ref: " + str(preco_ref) + "eur | " + label)
 
         msg = montar_mensagem(
-            modelo, anuncio["titulo"], preco, anuncio["link"],
+            modelo_real, titulo, preco, anuncio["link"],
             storage, icone, label, diff_pct, preco_ref,
-            mins, dist_km, local_nome
+            dist_km, local_nome
         )
+
         if enviar_telegram(msg):
             enviados += 1
-            log("  Telegram enviado.")
+            log("  [SEND] Telegram OK")
         else:
-            log("  Falha Telegram.")
+            log("  [FAIL] Telegram falhou")
+
         time.sleep(1)
 
     return enviados
@@ -541,10 +576,10 @@ def processar_modelo(modelo, query, historico):
 # ----------------------------------------------------------------------
 
 def main():
-    log("=" * 55)
-    log("MONITOR iPHONES - " + str(RAIO_KM) + "km de Alges | ultimos " + str(MINUTOS_MAXIMO) + " min")
-    log(str(len(MODELOS)) + " modelos monitorizados")
-    log("=" * 55)
+    log("=" * 60)
+    log("OLX TRACKER — " + str(RAIO_KM) + "km de Alges | janela: " + str(MINUTOS_MAXIMO) + "min")
+    log(str(len(MODELOS)) + " modelos | " + str(len(PALAVRAS_EXCLUIDAS)) + " palavras proibidas")
+    log("=" * 60)
 
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
         log("ERRO: Credenciais Telegram nao definidas!")
@@ -562,9 +597,9 @@ def main():
         guardar_historico(historico)
         time.sleep(4)
 
-    log("=" * 55)
-    log("CONCLUIDO - " + str(total) + " notificacoes enviadas.")
-    log("=" * 55)
+    log("=" * 60)
+    log("CONCLUIDO — " + str(total) + " notificacoes enviadas.")
+    log("=" * 60)
 
 
 if __name__ == "__main__":
