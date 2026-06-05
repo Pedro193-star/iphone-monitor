@@ -116,7 +116,7 @@ PRECOS = {
         1024: {"is": 630, "buy": 480, "sel": 650},
     },
     "iPhone 15": {
-        128:  {"is": 300, "buy": 430, "sel": 470},
+        128:  {"is": 300, "buy": 370, "sel": 420},
         256:  {"is": 340, "buy": 450, "sel": 530},
         512:  {"is": 280, "buy": 360, "sel": 420},
     },
@@ -479,7 +479,7 @@ def classificar(preco, refs):
         return "\U0001f7e1", "NO LIMITE — negocia o preco", diff
     else:
         diff = round(((preco - buy) / buy) * 100, 1)
-        return "\U0001f534", "ACIMA DO IDEAL", -diff
+        return None, None, None  # Nao notifica — demasiado caro
 
 
 # ----------------------------------------------------------------------
@@ -730,6 +730,11 @@ def processar_modelo(query_modelo, query, historico):
         refs      = obter_refs(modelo_real, storage)
         icone, label, diff_pct = classificar(preco, refs)
 
+        # Se classificar devolveu None, o anuncio nao vale a pena
+        if icone is None:
+            log("  [SKIP] Demasiado caro (" + str(preco) + "eur): " + titulo[:40])
+            continue
+          
         log("  [OK] " + modelo_real + " " + str(storage or "?") + "GB | "
             + str(preco) + "eur | " + label
             + (" | bat:" + str(bateria_pct) + "%" if bateria_pct else ""))
