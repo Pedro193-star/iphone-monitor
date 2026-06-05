@@ -1,10 +1,11 @@
 """
-OLX TRACKER — Monitor de iPhones
-Versão com:
-  1. Detecção rigorosa do modelo real pelo título
-  2. Filtro anti-lixo com palavras proibidas
-  3. Janela de tempo alargada (60 min) para atrasos do GitHub
-  4. Mensagem Telegram limpa e rápida de ler
+OLX TRACKER — Monitor de iPhones v3
+Melhorias:
+  - Tabela de preços com 3 colunas: iServices / Comprar / Vender
+  - Leitura de descrição: bateria, danos, filtros de qualidade
+  - Filtro: bateria >= 84%, sem peças, sem eSIM-only, desbloqueado
+  - iPhone 12 Pro Max adicionado
+  - Detecção rigorosa de modelo pelo título
 """
 
 import requests
@@ -25,30 +26,10 @@ TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID   = os.environ.get("TELEGRAM_CHAT_ID", "")
 
 FICHEIRO_HISTORICO   = "historico.json"
-MINUTOS_MAXIMO       = 60    # Rede de segurança para atrasos do GitHub Actions
-FILTRO_ACESSORIO_PCT = 85    # Ignora se preço > 85% abaixo da referência média
-MARGEM_ACIMA         = 5     # % acima da referência → "tenta negociar"
-MARGEM_ABAIXO        = 10    # % abaixo da referência → "excelente negócio"
+MINUTOS_MAXIMO       = 60
+FILTRO_ACESSORIO_PCT = 60    # Ignora se preço < 40% do iServices
 
-# ----------------------------------------------------------------------
-# FILTRO ANTI-LIXO — títulos com estas palavras são ignorados
-# ----------------------------------------------------------------------
-PALAVRAS_EXCLUIDAS = [
-    "capa", "capas", "capinha", "capinhas",
-    "pelicula", "peliculas", "película", "películas",
-    "ecra", "ecras", "ecrã", "ecrãs", "display",
-    "bateria", "baterias",
-    "pecas", "peças",
-    "caixa", "vazia", "vazio",
-    "avariado", "avariada", "avaria",
-    "partido", "partida", "partidos", "partidas",
-    "bloqueado", "bloqueada",
-    "icloud",
-]
-
-# ----------------------------------------------------------------------
-# FILTRO DE LOCALIZACAO — Centro: Algés | Raio: 20 km
-# ----------------------------------------------------------------------
+# Localização — Centro: Algés | Raio: 20km
 CENTRO_LAT = 38.7057
 CENTRO_LON = -9.2311
 RAIO_KM    = 20
@@ -65,45 +46,133 @@ LOCAIS_ACEITES = [
     "mafra", "sesimbra", "palmela", "setúbal", "setubal",
 ]
 
+# Palavras proibidas no TÍTULO
+PALAVRAS_EXCLUIDAS = [
+    "capa", "capas", "capinha", "capinhas",
+    "pelicula", "peliculas", "película", "películas",
+    "ecra", "ecras", "ecrã", "ecrãs", "display",
+    "bateria", "baterias", "pecas", "peças",
+    "caixa", "vazia", "vazio",
+    "avariado", "avariada", "avaria",
+    "partido", "partida",
+    "bloqueado", "bloqueada",
+    "icloud",
+]
+
+BATERIA_MINIMA = 84   # Rejeita se bateria < 84%
+
 
 # ======================================================================
-#  TABELA DE PRECOS DE REFERENCIA (mercado usado PT)
+#  TABELA DE PRECOS — 3 colunas por storage
+#  "is"  = iServices (preço de referência rápida)
+#  "buy" = Comprar/negociar (preço alvo de compra)
+#  "sel" = Vender (preço de venda esperado)
+#  Condições: como novo, bateria 84-95%, desbloqueado
 # ======================================================================
 
 PRECOS = {
-    "iPhone 13 Mini":    {128: 154,  256: 227,  512: 353},
-    "iPhone 13":         {128: 195,  256: 236,  512: 300},
-    "iPhone 13 Pro":     {128: 302,  256: 332,  512: 368,  1024: 434},
-    "iPhone 13 Pro Max": {128: 309,  256: 349,  512: 389,  1024: 464},
-    "iPhone 14":         {128: 247,  256: 304,  512: 391},
-    "iPhone 14 Plus":    {128: 298,  256: 347,  512: 417},
-    "iPhone 14 Pro":     {128: 390,  256: 428,  512: 502,  1024: 533},
-    "iPhone 14 Pro Max": {128: 436,  256: 474,  512: 547,  1024: 611},
-    "iPhone 15":         {128: 370,  256: 440,  512: 515},
-    "iPhone 15 Plus":    {128: 381,  256: 467,  512: 580},
-    "iPhone 15 Pro":     {128: 470,  256: 520,  512: 569,  1024: 670},
-    "iPhone 15 Pro Max": {256: 551,  512: 605,  1024: 630},
-    "iPhone 16":         {256: 511,  512: 604,  1024: 670},
-    "iPhone 16e":        {128: 355,  256: 429,  512: 535},
-    "iPhone 16 Plus":    {128: 545,  256: 640,  512: 725},
-    "iPhone 16 Pro":     {128: 667,  256: 702,  512: 820,  1024: 930},
-    "iPhone 16 Pro Max": {256: 746,  512: 831,  1024: 960},
+    "iPhone 12 Pro Max": {
+        128:  {"is": 220, "buy": 240, "sel": 295},
+        256:  {"is": 260, "buy": 270, "sel": 310},
+        512:  {"is": 340, "buy": 320, "sel": 350},
+    },
+    "iPhone 13 Mini": {
+        128:  {"is": 155, "buy": 210, "sel": 250},
+        256:  {"is": 180, "buy": 220, "sel": 260},
+    },
+    "iPhone 13": {
+        128:  {"is": 190, "buy": 230, "sel": 290},
+        256:  {"is": 210, "buy": 240, "sel": 300},
+        512:  {"is": 230, "buy": 250, "sel": 300},
+    },
+    "iPhone 13 Pro": {
+        128:  {"is": 250, "buy": 270, "sel": 310},
+        256:  {"is": 260, "buy": 280, "sel": 340},
+        512:  {"is": 320, "buy": 390, "sel": 450},
+    },
+    "iPhone 13 Pro Max": {
+        128:  {"is": 300, "buy": 350, "sel": 400},
+        256:  {"is": 320, "buy": 360, "sel": 400},
+        512:  {"is": 350, "buy": 440, "sel": 500},
+    },
+    "iPhone 14": {
+        128:  {"is": 200, "buy": 250, "sel": 330},
+        256:  {"is": 240, "buy": 300, "sel": 360},
+        512:  {"is": 360, "buy": 380, "sel": 430},
+    },
+    "iPhone 14 Plus": {
+        128:  {"is": 220, "buy": 280, "sel": 330},
+        256:  {"is": 280, "buy": 300, "sel": 360},
+    },
+    "iPhone 14 Pro": {
+        128:  {"is": 280, "buy": 310, "sel": 380},
+        256:  {"is": 300, "buy": 360, "sel": 430},
+        512:  {"is": 350, "buy": 420, "sel": 470},
+    },
+    "iPhone 14 Pro Max": {
+        128:  {"is": 330, "buy": 390, "sel": 430},
+        256:  {"is": 370, "buy": 400, "sel": 440},
+        512:  {"is": 380, "buy": 460, "sel": 570},
+        1024: {"is": 630, "buy": 480, "sel": 650},
+    },
+    "iPhone 15": {
+        128:  {"is": 300, "buy": 430, "sel": 470},
+        256:  {"is": 340, "buy": 450, "sel": 530},
+        512:  {"is": 280, "buy": 360, "sel": 420},
+    },
+    "iPhone 15 Plus": {
+        128:  {"is": 290, "buy": 430, "sel": 510},
+        256:  {"is": 330, "buy": 490, "sel": 590},
+        512:  {"is": 420, "buy": None, "sel": None},
+    },
+    "iPhone 15 Pro": {
+        128:  {"is": 370, "buy": 470, "sel": 520},
+        256:  {"is": 430, "buy": 520, "sel": 600},
+        512:  {"is": 530, "buy": 600, "sel": 700},
+        1024: {"is": 690, "buy": 720, "sel": 800},
+    },
+    "iPhone 15 Pro Max": {
+        256:  {"is": 460, "buy": 500, "sel": 580},
+        512:  {"is": 650, "buy": 700, "sel": 790},
+        1024: {"is": 690, "buy": 750, "sel": 850},
+    },
+    "iPhone 16e": {
+        128:  {"is": 280, "buy": 320, "sel": 380},
+        256:  {"is": 310, "buy": 400, "sel": 440},
+        512:  {"is": 320, "buy": None, "sel": None},
+    },
+    "iPhone 16": {
+        128:  {"is": 400, "buy": 470, "sel": 540},
+        256:  {"is": 440, "buy": 650, "sel": 760},
+        512:  {"is": 490, "buy": 570, "sel": 600},
+    },
+    "iPhone 16 Plus": {
+        128:  {"is": 440, "buy": 550, "sel": 650},
+        256:  {"is": 520, "buy": 600, "sel": 750},
+    },
+    "iPhone 16 Pro": {
+        128:  {"is": 460, "buy": 620, "sel": 700},
+        256:  {"is": 520, "buy": 650, "sel": 760},
+        512:  {"is": 530, "buy": 750, "sel": 830},
+    },
+    "iPhone 16 Pro Max": {
+        256:  {"is": 560, "buy": 680, "sel": 750},
+        512:  {"is": 610, "buy": 750, "sel": 850},
+        1024: {"is": 870, "buy": 900, "sel": 960},
+    },
 }
 
-# Ordem de prioridade para detecção do modelo real no título
-# (do mais específico para o menos específico)
+# Ordem de prioridade — do mais específico para o menos específico
 MODELOS_PRIORIDADE = [
     "iPhone 16 Pro Max", "iPhone 16 Pro", "iPhone 16 Plus", "iPhone 16e", "iPhone 16",
     "iPhone 15 Pro Max", "iPhone 15 Pro", "iPhone 15 Plus", "iPhone 15",
     "iPhone 14 Pro Max", "iPhone 14 Pro", "iPhone 14 Plus", "iPhone 14",
     "iPhone 13 Pro Max", "iPhone 13 Pro", "iPhone 13 Mini", "iPhone 13",
+    "iPhone 12 Pro Max",
 ]
 
-# ======================================================================
-#  MODELOS E QUERIES DE PESQUISA
-# ======================================================================
-
 MODELOS = {
+    "iPhone 12 Pro Max": "iphone 12 pro max",
     "iPhone 13 Mini":    "iphone 13 mini",
     "iPhone 13":         "iphone 13",
     "iPhone 13 Pro":     "iphone 13 pro",
@@ -202,15 +271,6 @@ def extrair_storage(titulo):
     return None
 
 
-def obter_preco_ref(modelo, storage):
-    tabela = PRECOS.get(modelo)
-    if not tabela:
-        return None
-    if storage and storage in tabela:
-        return tabela[storage]
-    return round(sum(tabela.values()) / len(tabela))
-
-
 def minutos_desde(created_at_str):
     if not created_at_str:
         return None
@@ -222,46 +282,116 @@ def minutos_desde(created_at_str):
         return None
 
 
-# ----------------------------------------------------------------------
-# DETECCAO RIGOROSA DO MODELO REAL
-# ----------------------------------------------------------------------
-
 def detectar_modelo_real(titulo):
-    """
-    Analisa o título e devolve o modelo iPhone mais específico encontrado.
-    Itera por MODELOS_PRIORIDADE do mais específico para o menos específico,
-    evitando classificar um 'Pro Max' como modelo base.
-    Devolve None se não encontrar nenhum modelo reconhecido.
-    """
     titulo_lower = titulo.lower()
-
     if "iphone" not in titulo_lower:
         return None
-
     for modelo in MODELOS_PRIORIDADE:
-        # Constrói padrão de busca flexível (ex: "iphone 15 pro max")
         padrao = modelo.lower().replace(" ", r"[\s\-]+")
         if re.search(padrao, titulo_lower):
             return modelo
-
     return None
 
 
-# ----------------------------------------------------------------------
-# FILTRO ANTI-LIXO
-# ----------------------------------------------------------------------
-
 def titulo_tem_palavra_proibida(titulo):
-    """
-    Devolve True se o título contiver alguma palavra da lista PALAVRAS_EXCLUIDAS.
-    Usa \b para corresponder apenas palavras completas.
-    """
     titulo_lower = titulo.lower()
     for palavra in PALAVRAS_EXCLUIDAS:
-        padrao = r"\b" + re.escape(palavra) + r"\b"
-        if re.search(padrao, titulo_lower):
+        if re.search(r"\b" + re.escape(palavra) + r"\b", titulo_lower):
             return True, palavra
     return False, None
+
+
+# ----------------------------------------------------------------------
+# ANALISE DE DESCRICAO
+# ----------------------------------------------------------------------
+
+def buscar_descricao(aid):
+    """Busca a descrição completa do anúncio via API individual."""
+    url = "https://www.olx.pt/api/v1/offers/" + str(aid) + "/"
+    try:
+        r = requests.get(url, headers=HEADERS_API, timeout=10)
+        if r.status_code == 200:
+            data = r.json()
+            return data.get("data", {}).get("description", "")
+    except Exception as e:
+        log("  Erro descricao: " + str(e))
+    return ""
+
+
+def analisar_descricao(descricao):
+    """
+    Analisa a descrição do anúncio.
+
+    Devolve:
+      deve_filtrar (bool)  — True = rejeitar este anúncio
+      motivo (str)         — razão do filtro (se aplicável)
+      bateria_pct (int)    — percentagem da bateria ou None
+      condicao_info (str)  — resumo legível do estado do aparelho
+    """
+    if not descricao:
+        return False, None, None, "⚪ Sem descrição"
+
+    d = descricao.lower()
+
+    # ── FILTROS DUROS ────────────────────────────────────────────────
+
+    # Para peças
+    if re.search(r"\bpara\s+pe[çc]as?\b", d):
+        return True, "Para peças", None, None
+
+    # Apenas eSIM (phone only accepts eSIM — limitation)
+    if re.search(r"\b(apenas\s+esim|s[oó]\s+esim|esim\s+only|n[aã]o\s+aceita?\s+sim\s+f[ií]sico)\b", d):
+        return True, "Apenas eSIM", None, None
+
+    # Bloqueado (sem "desbloqueado" na descrição)
+    if re.search(r"\bbloqueado\b", d) and not re.search(r"\bdesbloqueado\b", d):
+        return True, "Bloqueado/operadora", None, None
+
+    # Peças trocadas / componentes substituídos
+    if re.search(
+        r"\b(pe[çc]as?\s+trocadas?|ecr[aã]\s+trocado|display\s+trocado"
+        r"|bateria\s+trocada|touch\s+trocado|face\s+id\s+trocado"
+        r"|componente\s+trocado|original\s+trocado)\b", d
+    ):
+        return True, "Peças trocadas", None, None
+
+    # ── BATERIA ──────────────────────────────────────────────────────
+
+    bateria_pct = None
+    bat_match = (
+        re.search(r"bateria[:\s\-]+(\d{2,3})\s*%", d) or
+        re.search(r"(\d{2,3})\s*%\s*(?:de\s+)?bateria", d) or
+        re.search(r"sa[uú]de[:\s]+(\d{2,3})\s*%", d) or
+        re.search(r"capacidade[:\s]+(\d{2,3})\s*%", d) or
+        re.search(r"(\d{2,3})\s*%\s*(?:de\s+)?capacidade", d)
+    )
+    if bat_match:
+        pct = int(bat_match.group(1))
+        if 50 <= pct <= 100:
+            bateria_pct = pct
+            if bateria_pct < BATERIA_MINIMA:
+                return True, "Bateria " + str(bateria_pct) + "% (min. " + str(BATERIA_MINIMA) + "%)", bateria_pct, None
+
+    # ── CONDICAO ─────────────────────────────────────────────────────
+
+    partes = []
+
+    # Positivos
+    if re.search(r"\b(impec[áa]vel|perfeito\s+estado|como\s+novo|sem\s+danos?"
+                 r"|sem\s+riscos?|sem\s+arranha[õo]es?|estado\s+impec)\b", d):
+        partes.append("✅ Impecável")
+
+    # Negativos — danos / riscos
+    dano_match = re.search(
+        r"\b(dano|danos|risco(?!metro)|riscos|arranha[õo]|arranhado"
+        r"|parti[do]+|rachado|vidro\s+parti|ecr[aã]\s+parti|pequeno\s+risco)\b", d
+    )
+    if dano_match:
+        partes.append("⚠️ Danos/riscos mencionados")
+
+    condicao_info = " | ".join(partes) if partes else "⚪ Estado não mencionado"
+
+    return False, None, bateria_pct, condicao_info
 
 
 # ----------------------------------------------------------------------
@@ -272,16 +402,13 @@ def haversine(lat1, lon1, lat2, lon2):
     R = 6371
     dlat = math.radians(lat2 - lat1)
     dlon = math.radians(lon2 - lon1)
-    a = math.sin(dlat/2)**2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon/2)**2
+    a = (math.sin(dlat / 2) ** 2
+         + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2))
+         * math.sin(dlon / 2) ** 2)
     return R * 2 * math.asin(math.sqrt(a))
 
 
 def verificar_localizacao(anuncio):
-    """
-    Devolve (aceite, distancia_km, nome_local).
-    GPS tem prioridade. Se não houver, usa whitelist de nomes.
-    Se sem info, aceita por defeito.
-    """
     mapa = anuncio.get("map", {})
     if isinstance(mapa, dict):
         lat = mapa.get("lat")
@@ -292,7 +419,6 @@ def verificar_localizacao(anuncio):
                 return dist <= RAIO_KM, round(dist, 1), None
             except Exception:
                 pass
-
     loc = anuncio.get("location", {})
     local_raw = ""
     if isinstance(loc, dict):
@@ -301,30 +427,59 @@ def verificar_localizacao(anuncio):
             local_raw = cidade.get("name", "")
         if not local_raw:
             local_raw = loc.get("name", "")
-
     if local_raw:
         aceite = any(l in local_raw.lower() for l in LOCAIS_ACEITES)
         return aceite, None, local_raw
-
-    return True, None, None  # Sem info → aceita
+    return True, None, None   # Sem info → aceita
 
 
 # ----------------------------------------------------------------------
-# CLASSIFICACAO
+# CLASSIFICACAO DE PRECO
 # ----------------------------------------------------------------------
 
-def classificar(preco, preco_ref):
-    if preco_ref is None:
+def obter_refs(modelo, storage):
+    """Devolve dict {is, buy, sel} para o modelo+storage, ou None."""
+    tabela = PRECOS.get(modelo)
+    if not tabela:
+        return None
+    if storage and storage in tabela:
+        return tabela[storage]
+    # Sem storage: calcula médias dos storages com buy definido
+    validos = [v for v in tabela.values() if v.get("buy")]
+    if not validos:
+        return None
+    return {
+        "is":  round(sum(v["is"]  for v in validos) / len(validos)),
+        "buy": round(sum(v["buy"] for v in validos) / len(validos)),
+        "sel": round(sum(v["sel"] for v in validos) / len(validos)),
+    }
+
+
+def classificar(preco, refs):
+    """
+    Classifica com base no preço de compra alvo (buy).
+    Também verifica se está abaixo do iServices.
+    """
+    if not refs or not refs.get("buy"):
         return "\U0001f4f1", "SEM REFERENCIA", None
 
-    diff_pct = ((preco_ref - preco) / preco_ref) * 100
+    buy = refs["buy"]
+    is_p = refs.get("is", buy)
 
-    if diff_pct >= MARGEM_ABAIXO:
-        return "\U0001f525\U0001f525", "EXCELENTE NEGOCIO", diff_pct
-    elif diff_pct >= -MARGEM_ACIMA:
-        return "\u2705", "MUITO BOM DEAL", diff_pct
+    if preco <= is_p:
+        diff = round(((buy - preco) / buy) * 100, 1)
+        return "\U0001f525\U0001f525\U0001f525", "ABAIXO DO iSERVICES — COMPRA JA", diff
+    elif preco <= buy:
+        diff = round(((buy - preco) / buy) * 100, 1)
+        if diff >= 10:
+            return "\U0001f525\U0001f525", "EXCELENTE NEGOCIO", diff
+        return "\U0001f525", "BOM NEGOCIO — compra ja", diff
+    elif preco <= buy * 1.05:
+        diff = round(((buy - preco) / buy) * 100, 1)
+        return "\U0001f7e1", "NO LIMITE — negocia o preco", diff
     else:
-        return "\U0001f7e1", "ACIMA DO IDEAL - tenta negociar", diff_pct
+        diff = round(((preco - buy) / buy) * 100, 1)
+        return "\U0001f534", "ACIMA DO IDEAL", -diff
 
 
 # ----------------------------------------------------------------------
@@ -346,37 +501,55 @@ def enviar_telegram(texto):
         return False
 
 
-def montar_mensagem(modelo_real, titulo, preco, link, storage, icone, label, diff_pct, preco_ref, dist_km, local_nome):
-    preco_txt   = str(preco) + "\u20ac"
-    ref_txt     = str(preco_ref) + "\u20ac" if preco_ref else "N/D"
-    storage_txt = str(storage) + "GB" if storage else "?"
+def montar_mensagem(modelo_real, titulo, preco, link,
+                    storage, icone, label, diff_pct, refs,
+                    bateria_pct, condicao_info, dist_km, local_nome):
 
-    if dist_km is not None:
-        local_txt = str(dist_km) + "km de Alges"
-    elif local_nome:
-        local_txt = local_nome
-    else:
-        local_txt = "N/D"
+    storage_txt = str(storage) + "GB" if storage else "? GB"
 
+    # Lucro potencial
+    lucro = (refs["sel"] - preco) if refs and refs.get("sel") else None
+
+    # Cabeçalho
+    msg = icone + " <b>" + label + "</b>\n\n"
+    msg += "\U0001f4f1 <b>" + modelo_real + "</b> | " + storage_txt + "\n"
+    msg += "\U0001f4cc <b>" + titulo + "</b>\n\n"
+
+    # Preços
+    msg += "\U0001f4b6 <b>Preco pedido:</b> " + str(preco) + "\u20ac\n"
+    if refs:
+        is_txt  = str(refs.get("is",  "N/D")) + "\u20ac"
+        buy_txt = str(refs.get("buy", "N/D")) + "\u20ac"
+        sel_txt = str(refs.get("sel", "N/D")) + "\u20ac"
+        msg += ("\U0001f3ea iServices: <b>" + is_txt + "</b>  "
+                "\U0001f3af Comprar: <b>" + buy_txt + "</b>  "
+                "\U0001f4c8 Vender: <b>" + sel_txt + "</b>\n")
+    if lucro is not None:
+        emoji_lucro = "\U0001f911" if lucro > 100 else "\U0001f4b0"
+        msg += emoji_lucro + " <b>Lucro potencial:</b> +" + str(lucro) + "\u20ac\n"
     if diff_pct is not None:
-        sinal    = "-" if diff_pct >= 0 else "+"
-        diff_txt = sinal + str(round(abs(diff_pct), 1)) + "% vs ref"
-    else:
-        diff_txt = ""
+        sinal = "-" if diff_pct >= 0 else "+"
+        msg += "\U0001f4c9 <b>Vs comprar:</b> " + sinal + str(abs(diff_pct)) + "%\n"
 
-    msg = (
-        icone + " <b>" + label + "</b>\n\n"
-        "\U0001f4f1 <b>" + modelo_real + "</b> | " + storage_txt + "\n"
-        "\U0001f4cc <b>" + titulo + "</b>\n\n"
-        "\U0001f4b6 <b>Preco:</b> " + preco_txt + "\n"
-        "\U0001f3af <b>Ref:</b> " + ref_txt
-    )
-    if diff_txt:
-        msg += "  (" + diff_txt + ")"
-    msg += (
-        "\n\U0001f4cd <b>Local:</b> " + local_txt + "\n\n"
-        "\U0001f517 <a href=\"" + link + "\">Ver no OLX</a>"
-    )
+    # Bateria
+    msg += "\n"
+    if bateria_pct is not None:
+        bat_e = "\U0001f50b" if bateria_pct >= 84 else "\u26a0\ufe0f"
+        msg += bat_e + " <b>Bateria:</b> " + str(bateria_pct) + "%\n"
+    else:
+        msg += "\U0001f50b <b>Bateria:</b> Nao mencionada\n"
+
+    # Condição
+    if condicao_info:
+        msg += "\U0001f50d <b>Estado:</b> " + condicao_info + "\n"
+
+    # Localização
+    if dist_km is not None:
+        msg += "\U0001f4cd <b>Local:</b> " + str(dist_km) + "km de Alges\n"
+    elif local_nome:
+        msg += "\U0001f4cd <b>Local:</b> " + local_nome + "\n"
+
+    msg += "\n\U0001f517 <a href=\"" + link + "\">Ver no OLX</a>"
     return msg
 
 
@@ -395,15 +568,15 @@ def buscar_api(query):
         log("  API: HTTP " + str(r.status_code))
         if r.status_code != 200:
             return None
-        data = r.json()
+        data    = r.json()
         ofertas = data.get("data", [])
         log("  API: " + str(len(ofertas)) + " ofertas")
         anuncios = []
         for o in ofertas:
             try:
-                titulo = o.get("title", "")
-                link   = o.get("url", "")
-                aid    = str(o.get("id", ""))
+                titulo     = o.get("title", "")
+                link       = o.get("url", "")
+                aid        = str(o.get("id", ""))
                 created_at = (o.get("created_at") or o.get("last_refresh_time")
                               or o.get("pushup_time") or "")
                 preco = None
@@ -454,12 +627,12 @@ def buscar_nextdata(query):
         anuncios = []
         for ad in ads:
             try:
-                titulo = ad.get("title", "")
-                link   = ad.get("url", "")
-                aid    = str(ad.get("id", ""))
+                titulo     = ad.get("title", "")
+                link       = ad.get("url", "")
+                aid        = str(ad.get("id", ""))
                 created_at = ad.get("created_at") or ad.get("last_refresh_time") or ""
-                preco = None
-                p_raw = ad.get("price", {})
+                preco      = None
+                p_raw      = ad.get("price", {})
                 if isinstance(p_raw, dict):
                     preco = extrair_preco(p_raw.get("value") or p_raw.get("regularPrice", {}).get("value"))
                 else:
@@ -495,31 +668,27 @@ def processar_modelo(query_modelo, query, historico):
         return 0
 
     log("  " + str(len(anuncios)) + " anuncio(s)")
-
     enviados = 0
 
     for anuncio in anuncios:
-        aid = str(anuncio["id"])
-
-        # Já visto → salta (sem adicionar de novo ao histórico)
-        if aid in historico:
-            continue
-
-        # Marca como visto imediatamente (evita duplicados mesmo que filtre)
-        historico.append(aid)
-
+        aid    = str(anuncio["id"])
         titulo = anuncio["titulo"]
 
-        # ── 1. FILTRO ANTI-LIXO ──────────────────────────────────────
+        # Já visto?
+        if aid in historico:
+            continue
+        historico.append(aid)
+
+        # ── 1. PALAVRAS PROIBIDAS NO TÍTULO ──────────────────────────
         proibida, palavra = titulo_tem_palavra_proibida(titulo)
         if proibida:
-            log("  [LIXO] '" + palavra + "' em: " + titulo[:50])
+            log("  [LIXO] '" + str(palavra) + "': " + titulo[:45])
             continue
 
-        # ── 2. DETECCAO DO MODELO REAL ────────────────────────────────
+        # ── 2. MODELO REAL ────────────────────────────────────────────
         modelo_real = detectar_modelo_real(titulo)
-        if modelo_real is None:
-            log("  [SKIP] Modelo nao reconhecido: " + titulo[:50])
+        if not modelo_real:
+            log("  [SKIP] Modelo nao reconhecido: " + titulo[:45])
             continue
 
         # ── 3. FILTRO DE TEMPO ────────────────────────────────────────
@@ -532,37 +701,48 @@ def processar_modelo(query_modelo, query, historico):
         if not preco:
             continue
 
-        # ── 5. FILTRO DE ACESSORIOS (preco absurdo) ───────────────────
-        tabela_real = PRECOS.get(modelo_real, {})
-        ref_media   = round(sum(tabela_real.values()) / len(tabela_real)) if tabela_real else None
-        if ref_media and ((ref_media - preco) / ref_media) * 100 >= FILTRO_ACESSORIO_PCT:
-            log("  [SPAM] " + str(preco) + "eur demasiado baixo: " + titulo[:40])
+        # ── 5. FILTRO ANTI-SPAM POR PRECO ─────────────────────────────
+        tabela = PRECOS.get(modelo_real, {})
+        is_vals = [v["is"] for v in tabela.values() if v.get("is")]
+        is_media = round(sum(is_vals) / len(is_vals)) if is_vals else None
+        if is_media and preco < is_media * (1 - FILTRO_ACESSORIO_PCT / 100):
+            log("  [SPAM] " + str(preco) + "eur vs iS medio " + str(is_media) + "eur: " + titulo[:35])
             continue
 
-        # ── 6. FILTRO DE LOCALIZACAO ──────────────────────────────────
+        # ── 6. LOCALIZACAO ────────────────────────────────────────────
         aceite, dist_km, local_nome = verificar_localizacao(anuncio)
         if not aceite:
             info = str(dist_km) + "km" if dist_km else str(local_nome)
-            log("  [GEO] Fora do raio (" + info + "): " + titulo[:40])
+            log("  [GEO] Fora do raio (" + info + "): " + titulo[:35])
             continue
 
-        # ── 7. CLASSIFICACAO E ENVIO ──────────────────────────────────
-        storage   = extrair_storage(titulo)
-        preco_ref = obter_preco_ref(modelo_real, storage)
-        icone, label, diff_pct = classificar(preco, preco_ref)
+        # ── 7. LEITURA DA DESCRICAO ───────────────────────────────────
+        log("  [DESC] A ler descricao de " + aid + "...")
+        descricao = buscar_descricao(aid)
+        deve_filtrar, motivo, bateria_pct, condicao_info = analisar_descricao(descricao)
 
-        log("  [OK] " + modelo_real + " | " + titulo[:35] +
-            " | " + str(preco) + "eur | ref: " + str(preco_ref) + "eur | " + label)
+        if deve_filtrar:
+            log("  [DESC-FILTRO] " + str(motivo) + ": " + titulo[:40])
+            continue
+
+        # ── 8. CLASSIFICACAO E ENVIO ──────────────────────────────────
+        storage   = extrair_storage(titulo)
+        refs      = obter_refs(modelo_real, storage)
+        icone, label, diff_pct = classificar(preco, refs)
+
+        log("  [OK] " + modelo_real + " " + str(storage or "?") + "GB | "
+            + str(preco) + "eur | " + label
+            + (" | bat:" + str(bateria_pct) + "%" if bateria_pct else ""))
 
         msg = montar_mensagem(
             modelo_real, titulo, preco, anuncio["link"],
-            storage, icone, label, diff_pct, preco_ref,
-            dist_km, local_nome
+            storage, icone, label, diff_pct, refs,
+            bateria_pct, condicao_info, dist_km, local_nome
         )
 
         if enviar_telegram(msg):
             enviados += 1
-            log("  [SEND] Telegram OK")
+            log("  [SEND] OK")
         else:
             log("  [FAIL] Telegram falhou")
 
@@ -577,8 +757,8 @@ def processar_modelo(query_modelo, query, historico):
 
 def main():
     log("=" * 60)
-    log("OLX TRACKER — " + str(RAIO_KM) + "km de Alges | janela: " + str(MINUTOS_MAXIMO) + "min")
-    log(str(len(MODELOS)) + " modelos | " + str(len(PALAVRAS_EXCLUIDAS)) + " palavras proibidas")
+    log("OLX TRACKER v3 — " + str(RAIO_KM) + "km de Alges | bat>=" + str(BATERIA_MINIMA) + "%")
+    log(str(len(MODELOS)) + " modelos | janela: " + str(MINUTOS_MAXIMO) + "min")
     log("=" * 60)
 
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
