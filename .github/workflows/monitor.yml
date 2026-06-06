@@ -2,7 +2,7 @@ name: Monitor iPhones OLX
 
 on:
   schedule:
-    - cron: '*/7 * * * *'   # Corre a cada 7 minutos (com margem para atraso GitHub)
+    - cron: '*/2 * * * *'   # Corre a cada 2 minutos
   workflow_dispatch:          # Permite correr manualmente
 
 jobs:
@@ -19,17 +19,15 @@ jobs:
           python-version: '3.11'
 
       - name: Instalar dependencias
-        run: pip install requests beautifulsoup4
+        run: pip install requests
 
-      - name: Restaurar historico e medias
+      - name: Restaurar historico
         uses: actions/cache@v4
         with:
-          path: |
-            historico.json
-            medias.json
-          key: dados-monitor-${{ github.run_id }}
+          path: historico.json
+          key: historico-${{ github.run_id }}
           restore-keys: |
-            dados-monitor-
+            historico-
 
       - name: Correr o monitor
         env:
@@ -37,11 +35,9 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python monitor_iphone_smart.py
 
-      - name: Guardar historico e medias
+      - name: Guardar historico
         uses: actions/cache/save@v4
         if: always()
         with:
-          path: |
-            historico.json
-            medias.json
-          key: dados-monitor-${{ github.run_id }}
+          path: historico.json
+          key: historico-${{ github.run_id }}
