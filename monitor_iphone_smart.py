@@ -749,7 +749,7 @@ def processar_modelo(query_modelo, query, historico):
         storage = extrair_storage(titulo)
         refs    = obter_refs(modelo_real, storage)
         if refs and refs.get("sel") and preco > (refs["sel"] - 10):
-        log("  [CARO] " + str(preco) + " > venda " + str(refs["sel"]) + ": " + titulo[:35])
+            log("  [CARO] " + str(preco) + " > venda " + str(refs["sel"]) + ": " + titulo[:35])
             continue
 
         # 6. Localizacao
