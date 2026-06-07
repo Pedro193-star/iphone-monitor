@@ -51,20 +51,17 @@ LOCAIS_ACEITES = [
 # ======================================================================
 
 PALAVRAS_TITULO = [
-    "capa", "capas", "capinha", "capinhas",
-    "pelicula", "peliculas", "película", "películas",
-    "vidro", "temperado",
-    "ecra", "ecras", "ecrã", "ecrãs",
-    "display", "lcd", "oled",
-    "bateria", "baterias",
-    "pecas", "peças", "peca", "peça",
-    "caixa", "vazia", "vazio",
-    "avariado", "avariada", "avaria",
-    "partido", "partida", "partidos",
-    "bloqueado", "bloqueada",
-    "icloud",
-    "carregador", "cabo", "auriculares",
     "troco", "troca",
+    "gaiola", "smallrig", "cage",
+    "suporte", "mount", "tripé", "tripe", "gimbal",
+    "lente", "lentes", "ring light",
+    "acessorio", "acessórios", "acessorio",
+    "proteção", "protecao", "protetor", "protectora",
+    "bolsa", "mala", "carteira",
+    "dock", "base", "stand",
+    "powerbank", "power bank",
+    "airpods", "apple watch", "ipad",
+    "para iphone",
 ]
 
 # ======================================================================
@@ -751,8 +748,8 @@ def processar_modelo(query_modelo, query, historico):
         # 5. Preco acima do preco de venda → nao notifica
         storage = extrair_storage(titulo)
         refs    = obter_refs(modelo_real, storage)
-        if refs and refs.get("sel") and preco > refs["sel"]:
-            log("  [CARO] " + str(preco) + " > venda " + str(refs["sel"]) + ": " + titulo[:35])
+        if refs and refs.get("sel") and preco > (refs["sel"] - 10):
+        log("  [CARO] " + str(preco) + " > venda " + str(refs["sel"]) + ": " + titulo[:35])
             continue
 
         # 6. Localizacao
@@ -816,7 +813,7 @@ def main():
         except Exception as e:
             log("Erro em " + modelo + ": " + str(e))
         guardar_historico(historico)
-        time.sleep(4)
+        time.sleep(2)
 
     log("=" * 60)
     log("CONCLUIDO — " + str(total) + " notificacoes enviadas.")
