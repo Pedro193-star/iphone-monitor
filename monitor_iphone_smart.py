@@ -52,16 +52,16 @@ LOCAIS_ACEITES = [
 
 PALAVRAS_TITULO = [
     "troco", "troca",
+    "para iphone", "para iph", "compativel com iphone",
     "gaiola", "smallrig", "cage",
     "suporte", "mount", "tripé", "tripe", "gimbal",
     "lente", "lentes", "ring light",
-    "acessorio", "acessórios", "acessorio",
+    "acessorio", "acessórios", "acessorios",
     "proteção", "protecao", "protetor", "protectora",
     "bolsa", "mala", "carteira",
     "dock", "base", "stand",
     "powerbank", "power bank",
     "airpods", "apple watch", "ipad",
-    "para iphone",
 ]
 
 # ======================================================================
@@ -740,9 +740,9 @@ def processar_modelo(query_modelo, query, historico):
         if mins is not None and mins > MINUTOS_MAXIMO:
             continue
 
-        # 4. Preco
+        # 4. Preco (minimo 80eur — nenhum iPhone real custa menos)
         preco = anuncio.get("preco")
-        if not preco:
+        if not preco or preco < 80:
             continue
 
         # 5. Preco acima do preco de venda → nao notifica
