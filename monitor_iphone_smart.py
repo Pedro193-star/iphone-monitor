@@ -28,7 +28,7 @@ TELEGRAM_CHAT_ID   = os.environ.get("TELEGRAM_CHAT_ID", "")
 
 FICHEIRO_HISTORICO   = "historico.json"
 MINUTOS_MAXIMO       = 60
-BATERIA_MINIMA       = 84
+BATERIA_MINIMA       = 80
 
 CENTRO_LAT = 38.7057
 CENTRO_LON = -9.2311
@@ -768,6 +768,14 @@ def processar_modelo(query_modelo, query, historico):
             continue
 
         # 8. Classificacao e envio
+        
+        # Bateria 80-84%: precos descem 50eur
+        if refs and bateria_pct is not None and 80 <= bateria_pct < 84:
+            refs = {
+                "is":  refs["is"]  - 50 if refs.get("is")  else None,
+                "buy": refs["buy"] - 50 if refs.get("buy") else None,
+                "sel": refs["sel"] - 50 if refs.get("sel") else None,
+            }
         icone, label, diff_pct = classificar(preco, refs)
 
         log("  [OK] " + modelo_real + " " + str(storage or "?") + "GB | "
