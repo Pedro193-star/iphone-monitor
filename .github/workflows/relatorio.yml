@@ -1,8 +1,9 @@
-name: Relatorio Diario 22h
+name: Relatorio Diario 20h
 
 on:
   schedule:
-    - cron: '0 21 * * *'
+    # 19:00 UTC = 20:00 Lisboa (horario verao WEST, UTC+1)
+    - cron: '0 19 * * *'
   workflow_dispatch:
 
 jobs:
