@@ -2,8 +2,11 @@ name: Monitor iPhones OLX
 
 on:
   schedule:
-    - cron: '*/2 * * * *'   # Corre a cada 2 minutos
-  workflow_dispatch:          # Permite correr manualmente
+    - cron: '*/2 * * * *'
+  workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   monitor:
