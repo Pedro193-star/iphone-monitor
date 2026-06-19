@@ -1,12 +1,13 @@
 """
-OLX TRACKER v4 — Monitor de iPhones
+OLX TRACKER v5 — Monitor de iPhones
+- Le parametros estruturados do OLX (Capacidade, Modelo, Operador)
+- Storage detectado por: parametros OLX > titulo > descricao
+- Modelo detectado por: parametros OLX > titulo
 - Tabela 3 colunas: iServices / Comprar / Vender
 - Leitura de descricao: bateria, danos, filtros de qualidade
-- Lista completa de palavras proibidas (titulo + descricao)
-- Filtro bateria >= 84%
+- Filtro bateria >= 80%
 - Filtro localizacao 20km de Alges
-- Deteccao rigorosa de modelo pelo titulo
-- Nao notifica se preco > preco de venda
+- Nao notifica se preco > preco de venda - 10
 """
 
 import requests
@@ -46,10 +47,6 @@ LOCAIS_ACEITES = [
     "mafra", "sesimbra", "palmela", "setúbal", "setubal",
 ]
 
-# ======================================================================
-#  PALAVRAS PROIBIDAS NO TITULO
-# ======================================================================
-
 PALAVRAS_TITULO = [
     "troco", "troca",
     "para iphone", "para iph", "compativel com iphone",
@@ -64,13 +61,7 @@ PALAVRAS_TITULO = [
     "airpods", "apple watch", "ipad",
 ]
 
-# ======================================================================
-#  PALAVRAS/FRASES PROIBIDAS NA DESCRICAO
-#  Se qualquer uma destas aparecer na descricao → rejeitar
-# ======================================================================
-
 FILTROS_DESCRICAO = [
-    # Para pecas / nao funciona
     r"para\s+pe[çc]as?",
     r"para\s+repara[çc][aã]o",
     r"para\s+arranjo",
@@ -78,21 +69,18 @@ FILTROS_DESCRICAO = [
     r"n[aã]o\s+liga",
     r"n[aã]o\s+carrega",
     r"deixou\s+de\s+funcionar",
-    # eSIM only
     r"apenas\s+esim",
     r"s[oó]\s+esim",
     r"esim\s+only",
     r"n[aã]o\s+aceita?\s+sim\s+f[ií]sico",
     r"sem\s+slot\s+sim",
     r"n[aã]o\s+tem\s+slot",
-    # Bloqueado operadora / iCloud
-    r"bloqueado\s+(?:a|à|na)\s+\w+",     # bloqueado a vodafone
+    r"bloqueado\s+(?:a|à|na)\s+\w+",
     r"bloqueado\s+icloud",
     r"icloud\s+bloqueado",
     r"icloud\s+lock",
     r"conta\s+icloud",
     r"ativa[çc][aã]o\s+bloqueada",
-    # Pecas trocadas / nao original
     r"pe[çc]as?\s+trocadas?",
     r"ecr[aã]\s+trocado",
     r"display\s+trocado",
@@ -107,7 +95,6 @@ FILTROS_DESCRICAO = [
     r"display\s+n[aã]o\s+original",
     r"aftermarket",
     r"refurbished",
-    # Danos graves / partido / rachado
     r"ecr[aã]\s+parti",
     r"vidro\s+parti",
     r"vidro\s+rachado",
@@ -115,18 +102,15 @@ FILTROS_DESCRICAO = [
     r"costas\s+partid",
     r"rachado",
     r"rachadur",
-    # Agua / oxidacao
     r"[aá]gua",
     r"molhado",
     r"molhou",
     r"oxidado",
     r"oxida[çc][aã]o",
     r"humidade",
-    # Roubado / perdido / IMEI bloqueado
     r"roubado",
     r"perdido",
     r"imei\s+bloqueado",
-    # Avariado / estragado / com defeito
     r"avariado",
     r"avariada",
     r"estragado",
@@ -134,7 +118,6 @@ FILTROS_DESCRICAO = [
     r"com\s+defeito",
     r"defeituo[sz]",
     r"nao\s+funcional",
-    # Retalhista / lote / engano
     r"lote\s+de\s+\d+",
     r"vendo\s+lote",
     r"engano",
@@ -142,8 +125,7 @@ FILTROS_DESCRICAO = [
 
 
 # ======================================================================
-#  TABELA DE PRECOS — iServices / Comprar / Vender
-#  Condicoes: como novo, bateria 84-95%, desbloqueado
+#  TABELA DE PRECOS
 # ======================================================================
 
 PRECOS = {
@@ -267,9 +249,6 @@ MODELOS = {
     "iPhone 16 Pro Max": "iphone 16 pro max",
 }
 
-
-# ======================================================================
-
 HEADERS_API = {
     "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
     "Accept": "application/json",
@@ -332,8 +311,11 @@ def extrair_preco(valor):
         return None
 
 
-def extrair_storage(titulo):
-    t = titulo.lower()
+def extrair_storage_de_texto(texto):
+    """Extrai storage de qualquer texto (titulo, descricao, parametro)."""
+    if not texto:
+        return None
+    t = str(texto).lower()
     if "1024" in t or "1 024" in t or "1tb" in t or "1 tb" in t:
         return 1024
     if "512" in t:
@@ -344,6 +326,20 @@ def extrair_storage(titulo):
         return 128
     if "64" in t:
         return 64
+    return None
+
+
+def detectar_modelo_de_texto(texto):
+    """Detecta modelo a partir de qualquer texto."""
+    if not texto:
+        return None
+    texto_lower = str(texto).lower()
+    if "iphone" not in texto_lower:
+        return None
+    for modelo in MODELOS_PRIORIDADE:
+        padrao = modelo.lower().replace(" ", r"[\s\-]+")
+        if re.search(padrao, texto_lower):
+            return modelo
     return None
 
 
@@ -358,17 +354,6 @@ def minutos_desde(created_at_str):
         return None
 
 
-def detectar_modelo_real(titulo):
-    titulo_lower = titulo.lower()
-    if "iphone" not in titulo_lower:
-        return None
-    for modelo in MODELOS_PRIORIDADE:
-        padrao = modelo.lower().replace(" ", r"[\s\-]+")
-        if re.search(padrao, titulo_lower):
-            return modelo
-    return None
-
-
 def titulo_tem_palavra_proibida(titulo):
     titulo_lower = titulo.lower()
     for palavra in PALAVRAS_TITULO:
@@ -378,45 +363,104 @@ def titulo_tem_palavra_proibida(titulo):
 
 
 # ----------------------------------------------------------------------
-# ANALISE DE DESCRICAO
+# PARAMETROS ESTRUTURADOS DO OLX
 # ----------------------------------------------------------------------
 
-def buscar_descricao(aid):
+def extrair_params_olx(params_list):
+    """
+    Le os parametros estruturados que o OLX devolve.
+    Cada parametro tem key (ex: 'phonemodel', 'memory', 'state') e value.
+    Devolve dict com: modelo, storage, operador, estado.
+    """
+    resultado = {
+        "modelo":   None,
+        "storage":  None,
+        "operador": None,
+        "estado":   None,
+    }
+
+    if not params_list or not isinstance(params_list, list):
+        return resultado
+
+    for p in params_list:
+        try:
+            key = str(p.get("key", "")).lower()
+            value = p.get("value", {})
+
+            # O value pode ser dict {label, key} ou string direta
+            if isinstance(value, dict):
+                texto = str(value.get("label") or value.get("key") or "")
+            else:
+                texto = str(value)
+
+            if not texto:
+                continue
+
+            # MODELO (ex: phonemodel = "iPhone 15 Pro Max")
+            if "model" in key or "modelo" in key:
+                modelo = detectar_modelo_de_texto(texto)
+                if modelo:
+                    resultado["modelo"] = modelo
+
+            # STORAGE / CAPACIDADE (ex: memory = "256GB", "capacity")
+            elif "memory" in key or "capacid" in key or "storage" in key or "armazen" in key:
+                storage = extrair_storage_de_texto(texto)
+                if storage:
+                    resultado["storage"] = storage
+
+            # OPERADOR (ex: operator = "Desbloqueado")
+            elif "operator" in key or "operador" in key:
+                resultado["operador"] = texto.lower()
+
+            # ESTADO (ex: state = "Usado")
+            elif "state" in key or "estado" in key or "condition" in key:
+                resultado["estado"] = texto.lower()
+
+        except Exception:
+            pass
+
+    return resultado
+
+
+# ----------------------------------------------------------------------
+# DESCRICAO
+# ----------------------------------------------------------------------
+
+def buscar_detalhes_anuncio(aid):
+    """
+    Vai buscar descricao E parametros estruturados do anuncio.
+    Devolve (descricao, params).
+    """
     url = "https://www.olx.pt/api/v1/offers/" + str(aid) + "/"
     try:
         r = requests.get(url, headers=HEADERS_API, timeout=10)
         if r.status_code == 200:
-            data = r.json()
-            return data.get("data", {}).get("description", "")
+            data = r.json().get("data", {})
+            return data.get("description", ""), data.get("params", [])
     except Exception as e:
-        log("  Erro descricao: " + str(e))
-    return ""
+        log("  Erro detalhes: " + str(e))
+    return "", []
 
 
 def analisar_descricao(descricao):
     """
-    Devolve:
-      deve_filtrar (bool)
-      motivo (str)
-      bateria_pct (int ou None)
-      condicao_info (str)
+    Devolve: (deve_filtrar, motivo, bateria_pct, condicao_info)
     """
     if not descricao:
         return False, None, None, "\u26aa Sem descricao"
 
     d = descricao.lower()
 
-    # ── FILTROS DA DESCRICAO (lista completa) ────────────────────────
+    # Filtros duros
     for padrao in FILTROS_DESCRICAO:
         match = re.search(padrao, d)
         if match:
             return True, match.group(0), None, None
 
-    # Bloqueado (sem "desbloqueado" a acompanhar)
     if re.search(r"\bbloqueado\b", d) and not re.search(r"\bdesbloqueado\b", d):
         return True, "Bloqueado", None, None
 
-    # ── BATERIA ──────────────────────────────────────────────────────
+    # Bateria
     bateria_pct = None
     bat_match = (
         re.search(r"bateria[^0-9]{0,15}(\d{2,3})\s*%", d) or
@@ -432,19 +476,13 @@ def analisar_descricao(descricao):
             if bateria_pct < BATERIA_MINIMA:
                 return True, "Bateria " + str(bateria_pct) + "%", bateria_pct, None
 
-    # ── CONDICAO ─────────────────────────────────────────────────────
+    # Condicao
     partes = []
-
-    # "sem danos/riscos" = positivo (verificar ANTES dos negativos)
     if re.search(r"\b(sem\s+danos?|sem\s+riscos?|sem\s+arranha[õo]es?)\b", d):
         partes.append("\u2705 Sem danos")
-
-    # "impecavel / como novo / perfeito"
     if re.search(r"\b(impec[áa]vel|perfeito\s+estado|como\s+novo|estado\s+impec)\b", d):
         if "\u2705 Sem danos" not in partes:
             partes.append("\u2705 Impec\u00e1vel")
-
-    # Negativos — so se NAO houver "sem danos/riscos" antes
     if not any("\u2705" in p for p in partes):
         if re.search(
             r"\b(dano|danos|risco(?!metro)|riscos|arranha[õo]|arranhado"
@@ -505,14 +543,7 @@ def obter_refs(modelo, storage):
         return None
     if storage and storage in tabela:
         return tabela[storage]
-    validos = [v for v in tabela.values() if v.get("buy")]
-    if not validos:
-        return None
-    return {
-        "is":  round(sum(v["is"]  for v in validos) / len(validos)),
-        "buy": round(sum(v["buy"] for v in validos) / len(validos)),
-        "sel": round(sum(v["sel"] for v in validos) / len(validos)),
-    }
+    return None  # Sem storage exato -> nao devolve media (evita falsos positivos)
 
 
 def classificar(preco, refs):
@@ -625,8 +656,9 @@ def buscar_api(query):
                 aid        = str(o.get("id", ""))
                 created_at = (o.get("created_at") or o.get("last_refresh_time")
                               or o.get("pushup_time") or "")
+                params_lista = o.get("params", [])
                 preco = None
-                for p in o.get("params", []):
+                for p in params_lista:
                     if "price" in str(p.get("key", "")).lower():
                         preco = extrair_preco(p.get("value", {}).get("value", ""))
                         break
@@ -638,6 +670,7 @@ def buscar_api(query):
                         "id": aid, "titulo": titulo, "preco": preco,
                         "link": link, "created_at": created_at,
                         "map": o.get("map", {}), "location": o.get("location", {}),
+                        "params_lista": params_lista,
                     })
             except Exception:
                 pass
@@ -688,6 +721,7 @@ def buscar_nextdata(query):
                         "id": aid, "titulo": titulo, "preco": preco,
                         "link": link, "created_at": created_at,
                         "map": ad.get("map", {}), "location": ad.get("location", {}),
+                        "params_lista": ad.get("params", []),
                     })
             except Exception:
                 pass
@@ -729,46 +763,73 @@ def processar_modelo(query_modelo, query, historico):
             log("  [LIXO] '" + str(palavra) + "': " + titulo[:45])
             continue
 
-        # 2. Modelo real
-        modelo_real = detectar_modelo_real(titulo)
-        if not modelo_real:
-            log("  [SKIP] Modelo nao reconhecido: " + titulo[:45])
-            continue
-
-        # 3. Filtro de tempo
+        # 2. Filtro de tempo
         mins = minutos_desde(anuncio.get("created_at", ""))
         if mins is not None and mins > MINUTOS_MAXIMO:
             continue
 
-        # 4. Preco (minimo 80eur — nenhum iPhone real custa menos)
+        # 3. Preco
         preco = anuncio.get("preco")
         if not preco or preco < 80:
             continue
 
-        # 5. Preco acima do preco de venda → nao notifica
-        storage = extrair_storage(titulo)
-        refs    = obter_refs(modelo_real, storage)
-        if refs and refs.get("sel") and preco > (refs["sel"] - 10):
-            log("  [CARO] " + str(preco) + " > venda " + str(refs["sel"]) + ": " + titulo[:35])
+        # 4. PARAMETROS ESTRUTURADOS DO OLX (lista inicial)
+        params_olx = extrair_params_olx(anuncio.get("params_lista", []))
+
+        # 5. DETECTAR MODELO: parametros OLX > titulo
+        modelo_real = params_olx["modelo"] or detectar_modelo_de_texto(titulo)
+        if not modelo_real:
+            log("  [SKIP] Modelo nao reconhecido: " + titulo[:45])
             continue
 
-        # 6. Localizacao
+        # 6. DETECTAR STORAGE: parametros OLX > titulo
+        storage = params_olx["storage"] or extrair_storage_de_texto(titulo)
+
+        # 7. Localizacao
         aceite, dist_km, local_nome = verificar_localizacao(anuncio)
         if not aceite:
             info = str(dist_km) + "km" if dist_km else str(local_nome)
             log("  [GEO] Fora raio (" + info + "): " + titulo[:35])
             continue
 
-        # 7. Leitura da descricao
+        # 8. Leitura da descricao E parametros completos do anuncio individual
         log("  [DESC] A ler " + aid + "...")
-        descricao = buscar_descricao(aid)
+        descricao, params_completos = buscar_detalhes_anuncio(aid)
+
+        # Tentar enriquecer params com os do anuncio individual
+        params_extra = extrair_params_olx(params_completos)
+        if not storage and params_extra["storage"]:
+            storage = params_extra["storage"]
+            log("  [STORAGE] Encontrado nos params: " + str(storage) + "GB")
+        if not modelo_real and params_extra["modelo"]:
+            modelo_real = params_extra["modelo"]
+
+        # Verificar operador
+        operador = params_olx["operador"] or params_extra["operador"]
+        if operador and "bloqueado" in operador and "desbloqueado" not in operador:
+            log("  [OPERADOR] Bloqueado: " + titulo[:40])
+            continue
+
+        # 9. Se ainda nao temos storage, tentar pela descricao
+        if not storage:
+            storage = extrair_storage_de_texto(descricao)
+            if storage:
+                log("  [STORAGE] Encontrado na descricao: " + str(storage) + "GB")
+
+        # 10. Se NAO temos storage, nao podemos comparar precos com seguranca → skip
+        if not storage:
+            log("  [SKIP] Sem storage detectado: " + titulo[:45])
+            continue
+
+        # 11. Filtros da descricao + bateria
         deve_filtrar, motivo, bateria_pct, condicao_info = analisar_descricao(descricao)
         if deve_filtrar:
             log("  [DESC-FILTRO] " + str(motivo) + ": " + titulo[:40])
             continue
 
-        # 8. Classificacao e envio
-        
+        # 12. Refs e filtro de preco
+        refs = obter_refs(modelo_real, storage)
+
         # Bateria 80-84%: precos descem 50eur
         if refs and bateria_pct is not None and 80 <= bateria_pct < 84:
             refs = {
@@ -776,9 +837,16 @@ def processar_modelo(query_modelo, query, historico):
                 "buy": refs["buy"] - 50 if refs.get("buy") else None,
                 "sel": refs["sel"] - 50 if refs.get("sel") else None,
             }
+
+        # Nao notifica se preco acima de (venda - 10)
+        if refs and refs.get("sel") and preco > (refs["sel"] - 10):
+            log("  [CARO] " + str(preco) + " > venda " + str(refs["sel"]) + ": " + titulo[:35])
+            continue
+
+        # 13. Classificacao e envio
         icone, label, diff_pct = classificar(preco, refs)
 
-        log("  [OK] " + modelo_real + " " + str(storage or "?") + "GB | "
+        log("  [OK] " + modelo_real + " " + str(storage) + "GB | "
             + str(preco) + "eur | " + str(label)
             + (" | bat:" + str(bateria_pct) + "%" if bateria_pct else ""))
 
@@ -803,8 +871,8 @@ def processar_modelo(query_modelo, query, historico):
 
 def main():
     log("=" * 60)
-    log("OLX TRACKER v4 | " + str(RAIO_KM) + "km Alges | bat>=" + str(BATERIA_MINIMA) + "%")
-    log(str(len(MODELOS)) + " modelos | " + str(len(FILTROS_DESCRICAO)) + " filtros descricao")
+    log("OLX TRACKER v5 | " + str(RAIO_KM) + "km Alges | bat>=" + str(BATERIA_MINIMA) + "%")
+    log(str(len(MODELOS)) + " modelos | params OLX + descricao")
     log("=" * 60)
 
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
