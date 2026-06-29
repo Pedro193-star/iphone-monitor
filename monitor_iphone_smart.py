@@ -1,13 +1,13 @@
 """
-OLX TRACKER v5 — Monitor de iPhones
-- Le parametros estruturados do OLX (Capacidade, Modelo, Operador)
-- Storage detectado por: parametros OLX > titulo > descricao
-- Modelo detectado por: parametros OLX > titulo
+OLX TRACKER v7 — Monitor de iPhones
+- Le parametros estruturados do OLX (Modelo, Capacidade, Operador)
 - Tabela 3 colunas: iServices / Comprar / Vender
-- Leitura de descricao: bateria, danos, filtros de qualidade
-- Filtro bateria >= 80%
+- Sem storage detectado: usa o storage mais barato + destaca na notificacao
+- Bateria nao indicada: notifica na mesma + destaca para perguntar
+- Bateria confirmada < 80%: rejeita
 - Filtro localizacao 20km de Alges
-- Nao notifica se preco > preco de venda - 10
+- Nao notifica se preco > (sel - 10)
+- Classificacao: ABAIXO iSERVICES / EXCELENTE / BOM / NO LIMITE / ACIMA DO IDEAL
 """
 
 import requests
@@ -27,13 +27,13 @@ from urllib.parse import quote
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID   = os.environ.get("TELEGRAM_CHAT_ID", "")
 
-FICHEIRO_HISTORICO   = "historico.json"
-MINUTOS_MAXIMO       = 60
-BATERIA_MINIMA       = 80
+FICHEIRO_HISTORICO = "historico.json"
+MINUTOS_MAXIMO     = 60
+BATERIA_MINIMA     = 80
 
 CENTRO_LAT = 38.7057
 CENTRO_LON = -9.2311
-RAIO_KM    = 20
+RAIO_KM    = 30
 
 LOCAIS_ACEITES = [
     "lisboa", "lisbon", "alges", "algés", "oeiras", "cascais",
@@ -41,10 +41,15 @@ LOCAIS_ACEITES = [
     "barreiro", "estoril", "belem", "belém", "ajuda", "benfica",
     "carnaxide", "queijas", "linda-a-velha", "porto salvo",
     "paco de arcos", "paço de arcos", "caxias", "barcarena",
-    "monte estoril", "alcabideche", "queluz", "massamá", "massama",
-    "damaia", "pontinha", "sacavém", "sacavem", "moscavide",
-    "olivais", "oriente", "parque das nacoes", "parque das nações",
+    "carcavelos", "parede", "monte estoril", "alcabideche",
+    "queluz", "massamá", "massama", "damaia", "pontinha",
+    "sacavém", "sacavem", "moscavide", "olivais", "oriente",
+    "parque das nacoes", "parque das nações",
     "mafra", "sesimbra", "palmela", "setúbal", "setubal",
+    "almargem", "ericeira", "malveira", "venda do pinheiro",
+    "montijo", "alcochete", "moita", "pinhal novo",
+    "cacem", "cacém", "agualva", "rio de mouro",
+    "alfragide", "buraca", "reboleira", "amadora",
 ]
 
 PALAVRAS_TITULO = [
@@ -315,7 +320,6 @@ def extrair_preco(valor):
 
 
 def extrair_storage_de_texto(texto):
-    """Extrai storage de qualquer texto (titulo, descricao, parametro)."""
     if not texto:
         return None
     t = str(texto).lower()
@@ -333,7 +337,6 @@ def extrair_storage_de_texto(texto):
 
 
 def detectar_modelo_de_texto(texto):
-    """Detecta modelo a partir de qualquer texto."""
     if not texto:
         return None
     texto_lower = str(texto).lower()
@@ -365,63 +368,34 @@ def titulo_tem_palavra_proibida(titulo):
     return False, None
 
 
-# ----------------------------------------------------------------------
-# PARAMETROS ESTRUTURADOS DO OLX
-# ----------------------------------------------------------------------
-
 def extrair_params_olx(params_list):
-    """
-    Le os parametros estruturados que o OLX devolve.
-    Cada parametro tem key (ex: 'phonemodel', 'memory', 'state') e value.
-    Devolve dict com: modelo, storage, operador, estado.
-    """
-    resultado = {
-        "modelo":   None,
-        "storage":  None,
-        "operador": None,
-        "estado":   None,
-    }
-
+    resultado = {"modelo": None, "storage": None, "operador": None, "estado": None}
     if not params_list or not isinstance(params_list, list):
         return resultado
-
     for p in params_list:
         try:
             key = str(p.get("key", "")).lower()
             value = p.get("value", {})
-
-            # O value pode ser dict {label, key} ou string direta
             if isinstance(value, dict):
                 texto = str(value.get("label") or value.get("key") or "")
             else:
                 texto = str(value)
-
             if not texto:
                 continue
-
-            # MODELO (ex: phonemodel = "iPhone 15 Pro Max")
             if "model" in key or "modelo" in key:
                 modelo = detectar_modelo_de_texto(texto)
                 if modelo:
                     resultado["modelo"] = modelo
-
-            # STORAGE / CAPACIDADE (ex: memory = "256GB", "capacity")
             elif "memory" in key or "capacid" in key or "storage" in key or "armazen" in key:
                 storage = extrair_storage_de_texto(texto)
                 if storage:
                     resultado["storage"] = storage
-
-            # OPERADOR (ex: operator = "Desbloqueado")
             elif "operator" in key or "operador" in key:
                 resultado["operador"] = texto.lower()
-
-            # ESTADO (ex: state = "Usado")
             elif "state" in key or "estado" in key or "condition" in key:
                 resultado["estado"] = texto.lower()
-
         except Exception:
             pass
-
     return resultado
 
 
@@ -430,10 +404,6 @@ def extrair_params_olx(params_list):
 # ----------------------------------------------------------------------
 
 def buscar_detalhes_anuncio(aid):
-    """
-    Vai buscar descricao E parametros estruturados do anuncio.
-    Devolve (descricao, params).
-    """
     url = "https://www.olx.pt/api/v1/offers/" + str(aid) + "/"
     try:
         r = requests.get(url, headers=HEADERS_API, timeout=10)
@@ -448,6 +418,8 @@ def buscar_detalhes_anuncio(aid):
 def analisar_descricao(descricao):
     """
     Devolve: (deve_filtrar, motivo, bateria_pct, condicao_info)
+    Bateria nao mencionada = NAO filtra (assume OK).
+    Bateria < 80% confirmado = filtra.
     """
     if not descricao:
         return False, None, None, "\u26aa Sem descricao"
@@ -541,12 +513,21 @@ def verificar_localizacao(anuncio):
 # ----------------------------------------------------------------------
 
 def obter_refs(modelo, storage):
+    """
+    Devolve (refs, storage_usado).
+    Se storage nao for fornecido OU nao existir: usa o storage mais barato.
+    """
     tabela = PRECOS.get(modelo)
     if not tabela:
-        return None
+        return None, None
     if storage and storage in tabela:
-        return tabela[storage]
-    return None  # Sem storage exato -> nao devolve media (evita falsos positivos)
+        return tabela[storage], storage
+    validos = [(k, v) for k, v in tabela.items() if v.get("sel") and v.get("buy")]
+    if not validos:
+        return None, None
+    validos.sort(key=lambda x: x[1]["sel"])
+    storage_usado, refs = validos[0]
+    return refs, storage_usado
 
 
 def classificar(preco, refs):
@@ -590,9 +571,15 @@ def enviar_telegram(texto):
 
 
 def montar_mensagem(modelo_real, titulo, preco, link,
-                    storage, icone, label, diff_pct, refs,
+                    storage, storage_estimado, icone, label, diff_pct, refs,
                     bateria_pct, condicao_info, dist_km, local_nome):
-    storage_txt = str(storage) + "GB" if storage else "?"
+    if storage:
+        storage_txt = str(storage) + "GB"
+    elif storage_estimado:
+        storage_txt = "\u2753 NAO INDICADO (comparei com " + str(storage_estimado) + "GB) — perguntar ao vendedor"
+    else:
+        storage_txt = "\u2753 NAO INDICADO — perguntar ao vendedor"
+
     lucro = (refs["sel"] - preco) if refs and refs.get("sel") else None
 
     msg = icone + " <b>" + label + "</b>\n\n"
@@ -619,7 +606,7 @@ def montar_mensagem(modelo_real, titulo, preco, link,
         bat_e = "\U0001f50b" if bateria_pct >= BATERIA_MINIMA else "\u26a0\ufe0f"
         msg += bat_e + " <b>Bateria:</b> " + str(bateria_pct) + "%\n"
     else:
-        msg += "\U0001f50b <b>Bateria:</b> Nao mencionada\n"
+        msg += "\u2753 <b>Bateria:</b> NAO INDICADA — perguntar ao vendedor\n"
 
     if condicao_info:
         msg += "\U0001f50d <b>Estado:</b> " + condicao_info + "\n"
@@ -776,16 +763,16 @@ def processar_modelo(query_modelo, query, historico):
         if not preco or preco < 80:
             continue
 
-        # 4. PARAMETROS ESTRUTURADOS DO OLX (lista inicial)
+        # 4. PARAMETROS ESTRUTURADOS DA LISTAGEM
         params_olx = extrair_params_olx(anuncio.get("params_lista", []))
 
-        # 5. DETECTAR MODELO: parametros OLX > titulo
+        # 5. MODELO: parametros > titulo
         modelo_real = params_olx["modelo"] or detectar_modelo_de_texto(titulo)
         if not modelo_real:
             log("  [SKIP] Modelo nao reconhecido: " + titulo[:45])
             continue
 
-        # 6. DETECTAR STORAGE: parametros OLX > titulo
+        # 6. STORAGE: parametros > titulo (pode ficar None)
         storage = params_olx["storage"] or extrair_storage_de_texto(titulo)
 
         # 7. Localizacao
@@ -795,43 +782,41 @@ def processar_modelo(query_modelo, query, historico):
             log("  [GEO] Fora raio (" + info + "): " + titulo[:35])
             continue
 
-        # 8. Leitura da descricao E parametros completos do anuncio individual
+        # 8. Descricao + params do anuncio individual
         log("  [DESC] A ler " + aid + "...")
         descricao, params_completos = buscar_detalhes_anuncio(aid)
-
-        # Tentar enriquecer params com os do anuncio individual
         params_extra = extrair_params_olx(params_completos)
+
         if not storage and params_extra["storage"]:
             storage = params_extra["storage"]
-            log("  [STORAGE] Encontrado nos params: " + str(storage) + "GB")
+            log("  [STORAGE] Params: " + str(storage) + "GB")
         if not modelo_real and params_extra["modelo"]:
             modelo_real = params_extra["modelo"]
 
-        # Verificar operador
+        # Operador
         operador = params_olx["operador"] or params_extra["operador"]
         if operador and "bloqueado" in operador and "desbloqueado" not in operador:
             log("  [OPERADOR] Bloqueado: " + titulo[:40])
             continue
 
-        # 9. Se ainda nao temos storage, tentar pela descricao
+        # 9. Storage na descricao
         if not storage:
             storage = extrair_storage_de_texto(descricao)
             if storage:
-                log("  [STORAGE] Encontrado na descricao: " + str(storage) + "GB")
+                log("  [STORAGE] Descricao: " + str(storage) + "GB")
 
-        # 10. Se NAO temos storage, nao podemos comparar precos com seguranca → skip
-        if not storage:
-            log("  [SKIP] Sem storage detectado: " + titulo[:45])
-            continue
-
-        # 11. Filtros da descricao + bateria
+        # 10. Filtros da descricao + bateria
         deve_filtrar, motivo, bateria_pct, condicao_info = analisar_descricao(descricao)
         if deve_filtrar:
             log("  [DESC-FILTRO] " + str(motivo) + ": " + titulo[:40])
             continue
 
-        # 12. Refs e filtro de preco
-        refs = obter_refs(modelo_real, storage)
+        # 11. Refs — se nao ha storage, usa o mais barato (conservador)
+        refs, storage_usado = obter_refs(modelo_real, storage)
+        storage_estimado = None
+        if not storage and storage_usado:
+            storage_estimado = storage_usado
+            log("  [STORAGE] Sem info, a comparar com " + str(storage_usado) + "GB (mais barato)")
 
         # Bateria 80-84%: precos descem 50eur
         if refs and bateria_pct is not None and 80 <= bateria_pct < 84:
@@ -841,7 +826,7 @@ def processar_modelo(query_modelo, query, historico):
                 "sel": refs["sel"] - 50 if refs.get("sel") else None,
             }
 
-        # Nao notifica se preco acima de (venda - 10)
+        # 12. Preco demasiado alto (acima de sel - 10)
         if refs and refs.get("sel") and preco > (refs["sel"] - 10):
             log("  [CARO] " + str(preco) + " > venda " + str(refs["sel"]) + ": " + titulo[:35])
             continue
@@ -849,13 +834,13 @@ def processar_modelo(query_modelo, query, historico):
         # 13. Classificacao e envio
         icone, label, diff_pct = classificar(preco, refs)
 
-        log("  [OK] " + modelo_real + " " + str(storage) + "GB | "
-            + str(preco) + "eur | " + str(label)
-            + (" | bat:" + str(bateria_pct) + "%" if bateria_pct else ""))
+        lucro_log = (refs["sel"] - preco) if refs and refs.get("sel") else "?"
+        log("  [OK] " + modelo_real + " " + str(storage or storage_estimado or "?") + "GB | "
+            + str(preco) + "eur | lucro:+" + str(lucro_log) + "eur | " + str(label))
 
         msg = montar_mensagem(
             modelo_real, titulo, preco, anuncio["link"],
-            storage, icone, label, diff_pct, refs,
+            storage, storage_estimado, icone, label, diff_pct, refs,
             bateria_pct, condicao_info, dist_km, local_nome
         )
         if enviar_telegram(msg):
@@ -874,8 +859,8 @@ def processar_modelo(query_modelo, query, historico):
 
 def main():
     log("=" * 60)
-    log("OLX TRACKER v5 | " + str(RAIO_KM) + "km Alges | bat>=" + str(BATERIA_MINIMA) + "%")
-    log(str(len(MODELOS)) + " modelos | params OLX + descricao")
+    log("OLX TRACKER v7 | " + str(RAIO_KM) + "km Alges | bat>=" + str(BATERIA_MINIMA) + "%")
+    log(str(len(MODELOS)) + " modelos | " + str(len(FILTROS_DESCRICAO)) + " filtros descricao")
     log("=" * 60)
 
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
