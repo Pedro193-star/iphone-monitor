@@ -1,13 +1,11 @@
 """
-OLX TRACKER v7 — Monitor de iPhones
-- Le parametros estruturados do OLX (Modelo, Capacidade, Operador)
-- Tabela 3 colunas: iServices / Comprar / Vender
-- Sem storage detectado: usa o storage mais barato + destaca na notificacao
-- Bateria nao indicada: notifica na mesma + destaca para perguntar
-- Bateria confirmada < 80%: rejeita
-- Filtro localizacao 20km de Alges
-- Nao notifica se preco > (sel - 10)
-- Classificacao: ABAIXO iSERVICES / EXCELENTE / BOM / NO LIMITE / ACIMA DO IDEAL
+OLX TRACKER v8 — Monitor de iPhones (versao GitHub otimizada)
+Otimizacoes desta versao:
+- Janela alargada para 120 minutos (compensa atraso do GitHub Actions)
+- API pede 100 resultados em vez de 40 (apanha anuncios que ficavam de fora)
+- Logs detalhados dos [SKIP] para debug de titulos mal detectados
+- Bateria minima: 81% (rejeita se confirmada abaixo)
+- SEM penalizacao 80-84% (bateria 81+ = precos normais)
 """
 
 import requests
@@ -28,11 +26,12 @@ TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID   = os.environ.get("TELEGRAM_CHAT_ID", "")
 
 FICHEIRO_HISTORICO = "historico.json"
-MINUTOS_MAXIMO     = 60
-BATERIA_MINIMA     = 81
+MINUTOS_MAXIMO     = 120     # Janela alargada — compensa fila do GitHub
+BATERIA_MINIMA     = 81      # Rejeita se confirmada abaixo
+LIMITE_API         = 100     # Anuncios por pesquisa (era 40)
 
-CENTRO_LAT = 38.7057
-CENTRO_LON = -9.2311
+CENTRO_LAT = 38.6907         # Nova SBE / Carcavelos
+CENTRO_LON = -9.3128
 RAIO_KM    = 30
 
 LOCAIS_ACEITES = [
@@ -49,7 +48,7 @@ LOCAIS_ACEITES = [
     "almargem", "ericeira", "malveira", "venda do pinheiro",
     "montijo", "alcochete", "moita", "pinhal novo",
     "cacem", "cacém", "agualva", "rio de mouro",
-    "alfragide", "buraca", "reboleira", "amadora",
+    "alfragide", "buraca", "reboleira",
 ]
 
 PALAVRAS_TITULO = [
@@ -135,94 +134,91 @@ FILTROS_DESCRICAO = [
 
 PRECOS = {
     "iPhone 12 Pro Max": {
-        128:  {"is": 210, "buy": 235, "sel": 295},
+        128:  {"is": 220, "buy": 240, "sel": 295},
         256:  {"is": 260, "buy": 270, "sel": 310},
-        512:  {"is": 290, "buy": 320, "sel": 350},
+        512:  {"is": 340, "buy": 320, "sel": 350},
     },
     "iPhone 13 Mini": {
         128:  {"is": 155, "buy": 210, "sel": 250},
         256:  {"is": 180, "buy": 220, "sel": 260},
-        128:  {"is": 250, "buy": 280, "sel": 350},
     },
     "iPhone 13": {
-        128:  {"is": 190, "buy": 200, "sel": 240},
-        256:  {"is": 210, "buy": 240, "sel": 290},
-        512:  {"is": 230, "buy": 250, "sel": 320},
+        128:  {"is": 190, "buy": 230, "sel": 290},
+        256:  {"is": 210, "buy": 240, "sel": 300},
+        512:  {"is": 230, "buy": 250, "sel": 300},
     },
     "iPhone 13 Pro": {
         128:  {"is": 250, "buy": 270, "sel": 310},
-        256:  {"is": 260, "buy": 280, "sel": 360},
-        512:  {"is": 320, "buy": 390, "sel": 440},
-        1024: {"is": 350, "buy": 385, "sel": 455},
+        256:  {"is": 260, "buy": 280, "sel": 340},
+        512:  {"is": 320, "buy": 390, "sel": 450},
     },
     "iPhone 13 Pro Max": {
-        128:  {"is": 300, "buy": 330, "sel": 390},
-        256:  {"is": 320, "buy": 360, "sel": 430},
-        512:  {"is": 350, "buy": 440, "sel": 530},
+        128:  {"is": 300, "buy": 350, "sel": 400},
+        256:  {"is": 320, "buy": 360, "sel": 400},
+        512:  {"is": 350, "buy": 440, "sel": 500},
     },
     "iPhone 14": {
-        128:  {"is": 200, "buy": 230, "sel": 290},
+        128:  {"is": 200, "buy": 250, "sel": 330},
         256:  {"is": 240, "buy": 300, "sel": 360},
-        512:  {"is": 360, "buy": 370, "sel": 420},
+        512:  {"is": 360, "buy": 380, "sel": 430},
     },
     "iPhone 14 Plus": {
         128:  {"is": 220, "buy": 280, "sel": 330},
-        256:  {"is": 280, "buy": 320, "sel": 400},
+        256:  {"is": 280, "buy": 300, "sel": 360},
     },
     "iPhone 14 Pro": {
-        128:  {"is": 280, "buy": 320, "sel": 400},
-        256:  {"is": 300, "buy": 360, "sel": 440},
+        128:  {"is": 280, "buy": 310, "sel": 380},
+        256:  {"is": 300, "buy": 360, "sel": 430},
         512:  {"is": 350, "buy": 420, "sel": 470},
-        1024: {"is": 450, "buy": 480, "sel": 570},
     },
     "iPhone 14 Pro Max": {
-        128:  {"is": 330, "buy": 390, "sel": 440},
-        256:  {"is": 370, "buy": 430, "sel": 520},
-        512:  {"is": 380, "buy": 460, "sel": 560},
-        1024: {"is": 500, "buy": 510, "sel": 620},
+        128:  {"is": 330, "buy": 390, "sel": 430},
+        256:  {"is": 370, "buy": 400, "sel": 440},
+        512:  {"is": 380, "buy": 460, "sel": 570},
+        1024: {"is": 630, "buy": 480, "sel": 650},
     },
     "iPhone 15": {
         128:  {"is": 300, "buy": 370, "sel": 420},
-        256:  {"is": 340, "buy": 400, "sel": 490},
-        512:  {"is": 400, "buy": 430, "sel": 525},
+        256:  {"is": 340, "buy": 450, "sel": 530},
+        512:  {"is": 280, "buy": 360, "sel": 420},
     },
     "iPhone 15 Plus": {
-        128:  {"is": 290, "buy": 320, "sel": 400},
-        256:  {"is": 330, "buy": 410, "sel": 500},
-        512:  {"is": 420, "buy": 520, "sel": 620},
+        128:  {"is": 290, "buy": 430, "sel": 510},
+        256:  {"is": 330, "buy": 490, "sel": 590},
+        512:  {"is": 420, "buy": None, "sel": None},
     },
     "iPhone 15 Pro": {
-        128:  {"is": 370, "buy": 450, "sel": 520},
+        128:  {"is": 370, "buy": 470, "sel": 520},
         256:  {"is": 430, "buy": 520, "sel": 600},
         512:  {"is": 530, "buy": 600, "sel": 700},
-        1024: {"is": 690, "buy": 720, "sel": 850},
+        1024: {"is": 690, "buy": 720, "sel": 800},
     },
     "iPhone 15 Pro Max": {
-        256:  {"is": 460, "buy": 500, "sel": 600},
-        512:  {"is": 520, "buy": 630, "sel": 720},
-        1024: {"is": 570, "buy": 630, "sel": 760},
+        256:  {"is": 460, "buy": 500, "sel": 580},
+        512:  {"is": 650, "buy": 700, "sel": 790},
+        1024: {"is": 690, "buy": 750, "sel": 850},
     },
     "iPhone 16e": {
         128:  {"is": 280, "buy": 320, "sel": 380},
         256:  {"is": 310, "buy": 400, "sel": 440},
-        512:  {"is": 320, "buy": 400, "sel": 500},
+        512:  {"is": 320, "buy": None, "sel": None},
     },
     "iPhone 16": {
-        128:  {"is": 400, "buy": 470, "sel": 600},
-        256:  {"is": 440, "buy": 650, "sel": 740},
-        512:  {"is": 570, "buy": 670, "sel": 800},
+        128:  {"is": 400, "buy": 470, "sel": 540},
+        256:  {"is": 440, "buy": 650, "sel": 760},
+        512:  {"is": 490, "buy": 570, "sel": 600},
     },
     "iPhone 16 Plus": {
-        128:  {"is": 440, "buy": 540, "sel": 630},
-        256:  {"is": 520, "buy": 600, "sel": 700},
+        128:  {"is": 440, "buy": 550, "sel": 650},
+        256:  {"is": 520, "buy": 600, "sel": 750},
     },
     "iPhone 16 Pro": {
-        128:  {"is": 460, "buy": 550, "sel": 670},
-        256:  {"is": 520, "buy": 650, "sel": 790},
-        512:  {"is": 530, "buy": 750, "sel": 890},
+        128:  {"is": 460, "buy": 620, "sel": 700},
+        256:  {"is": 520, "buy": 650, "sel": 760},
+        512:  {"is": 530, "buy": 750, "sel": 830},
     },
     "iPhone 16 Pro Max": {
-        256:  {"is": 560, "buy": 680, "sel": 780},
+        256:  {"is": 560, "buy": 680, "sel": 750},
         512:  {"is": 610, "buy": 750, "sel": 850},
         1024: {"is": 870, "buy": 900, "sel": 960},
     },
@@ -416,17 +412,11 @@ def buscar_detalhes_anuncio(aid):
 
 
 def analisar_descricao(descricao):
-    """
-    Devolve: (deve_filtrar, motivo, bateria_pct, condicao_info)
-    Bateria nao mencionada = NAO filtra (assume OK).
-    Bateria < 80% confirmado = filtra.
-    """
     if not descricao:
         return False, None, None, "\u26aa Sem descricao"
 
     d = descricao.lower()
 
-    # Filtros duros
     for padrao in FILTROS_DESCRICAO:
         match = re.search(padrao, d)
         if match:
@@ -435,7 +425,6 @@ def analisar_descricao(descricao):
     if re.search(r"\bbloqueado\b", d) and not re.search(r"\bdesbloqueado\b", d):
         return True, "Bloqueado", None, None
 
-    # Bateria
     bateria_pct = None
     bat_match = (
         re.search(r"bateria[^0-9]{0,15}(\d{2,3})\s*%", d) or
@@ -451,7 +440,6 @@ def analisar_descricao(descricao):
             if bateria_pct < BATERIA_MINIMA:
                 return True, "Bateria " + str(bateria_pct) + "%", bateria_pct, None
 
-    # Condicao
     partes = []
     if re.search(r"\b(sem\s+danos?|sem\s+riscos?|sem\s+arranha[õo]es?)\b", d):
         partes.append("\u2705 Sem danos")
@@ -513,10 +501,6 @@ def verificar_localizacao(anuncio):
 # ----------------------------------------------------------------------
 
 def obter_refs(modelo, storage):
-    """
-    Devolve (refs, storage_usado).
-    Se storage nao for fornecido OU nao existir: usa o storage mais barato.
-    """
     tabela = PRECOS.get(modelo)
     if not tabela:
         return None, None
@@ -612,7 +596,7 @@ def montar_mensagem(modelo_real, titulo, preco, link,
         msg += "\U0001f50d <b>Estado:</b> " + condicao_info + "\n"
 
     if dist_km is not None:
-        msg += "\U0001f4cd <b>Local:</b> " + str(dist_km) + "km de Alges\n"
+        msg += "\U0001f4cd <b>Local:</b> " + str(dist_km) + "km de Oeiras\n"
     elif local_nome:
         msg += "\U0001f4cd <b>Local:</b> " + local_nome + "\n"
 
@@ -626,7 +610,7 @@ def montar_mensagem(modelo_real, titulo, preco, link,
 
 def buscar_api(query):
     url = ("https://www.olx.pt/api/v1/offers/"
-           "?offset=0&limit=40"
+           "?offset=0&limit=" + str(LIMITE_API) +
            "&query=" + quote(query) +
            "&currency=EUR"
            "&sort_by=created_at%3Adesc")
@@ -737,7 +721,8 @@ def processar_modelo(query_modelo, query, historico):
         return 0
 
     log("  " + str(len(anuncios)) + " anuncio(s)")
-    enviados = 0
+    enviados     = 0
+    skip_modelo  = 0
 
     for anuncio in anuncios:
         aid    = str(anuncio["id"])
@@ -763,16 +748,18 @@ def processar_modelo(query_modelo, query, historico):
         if not preco or preco < 80:
             continue
 
-        # 4. PARAMETROS ESTRUTURADOS DA LISTAGEM
+        # 4. Parametros estruturados
         params_olx = extrair_params_olx(anuncio.get("params_lista", []))
 
         # 5. MODELO: parametros > titulo
         modelo_real = params_olx["modelo"] or detectar_modelo_de_texto(titulo)
         if not modelo_real:
-            log("  [SKIP] Modelo nao reconhecido: " + titulo[:45])
+            skip_modelo += 1
+            # Log detalhado: mostra o titulo INTEIRO para debug
+            log("  [SKIP-MODELO] Titulo: '" + titulo + "'")
             continue
 
-        # 6. STORAGE: parametros > titulo (pode ficar None)
+        # 6. STORAGE
         storage = params_olx["storage"] or extrair_storage_de_texto(titulo)
 
         # 7. Localizacao
@@ -782,8 +769,8 @@ def processar_modelo(query_modelo, query, historico):
             log("  [GEO] Fora raio (" + info + "): " + titulo[:35])
             continue
 
-        # 8. Descricao + params do anuncio individual
-        log("  [DESC] A ler " + aid + "...")
+        # 8. Descricao + params individuais
+        log("  [DESC] A ler " + aid + " (" + titulo[:35] + ")")
         descricao, params_completos = buscar_detalhes_anuncio(aid)
         params_extra = extrair_params_olx(params_completos)
 
@@ -793,37 +780,35 @@ def processar_modelo(query_modelo, query, historico):
         if not modelo_real and params_extra["modelo"]:
             modelo_real = params_extra["modelo"]
 
-        # Operador
         operador = params_olx["operador"] or params_extra["operador"]
         if operador and "bloqueado" in operador and "desbloqueado" not in operador:
             log("  [OPERADOR] Bloqueado: " + titulo[:40])
             continue
 
-        # 9. Storage na descricao
         if not storage:
             storage = extrair_storage_de_texto(descricao)
             if storage:
                 log("  [STORAGE] Descricao: " + str(storage) + "GB")
 
-        # 10. Filtros da descricao + bateria
+        # 9. Filtros descricao + bateria
         deve_filtrar, motivo, bateria_pct, condicao_info = analisar_descricao(descricao)
         if deve_filtrar:
             log("  [DESC-FILTRO] " + str(motivo) + ": " + titulo[:40])
             continue
 
-        # 11. Refs — se nao ha storage, usa o mais barato (conservador)
+        # 10. Refs
         refs, storage_usado = obter_refs(modelo_real, storage)
         storage_estimado = None
         if not storage and storage_usado:
             storage_estimado = storage_usado
-            log("  [STORAGE] Sem info, a comparar com " + str(storage_usado) + "GB (mais barato)")
+            log("  [STORAGE] Sem info, comparei com " + str(storage_usado) + "GB")
 
-        # 12. Preco demasiado alto (acima de sel - 10)
+        # 11. Preco demasiado alto
         if refs and refs.get("sel") and preco > (refs["sel"] - 10):
             log("  [CARO] " + str(preco) + " > venda " + str(refs["sel"]) + ": " + titulo[:35])
             continue
 
-        # 13. Classificacao e envio
+        # 12. Classificacao e envio
         icone, label, diff_pct = classificar(preco, refs)
 
         lucro_log = (refs["sel"] - preco) if refs and refs.get("sel") else "?"
@@ -842,6 +827,9 @@ def processar_modelo(query_modelo, query, historico):
             log("  [FAIL] Telegram falhou")
         time.sleep(1)
 
+    if skip_modelo > 0:
+        log("  RESUMO: " + str(skip_modelo) + " anuncios com titulo nao reconhecido")
+
     return enviados
 
 
@@ -851,7 +839,8 @@ def processar_modelo(query_modelo, query, historico):
 
 def main():
     log("=" * 60)
-    log("OLX TRACKER v7 | " + str(RAIO_KM) + "km Alges | bat>=" + str(BATERIA_MINIMA) + "%")
+    log("OLX TRACKER v8 | " + str(RAIO_KM) + "km Oeiras | bat>=" + str(BATERIA_MINIMA) + "%")
+    log("Janela: " + str(MINUTOS_MAXIMO) + "min | Limit API: " + str(LIMITE_API))
     log(str(len(MODELOS)) + " modelos | " + str(len(FILTROS_DESCRICAO)) + " filtros descricao")
     log("=" * 60)
 
