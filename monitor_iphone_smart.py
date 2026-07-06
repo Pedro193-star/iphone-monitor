@@ -134,17 +134,17 @@ FILTROS_DESCRICAO = [
 
 PRECOS = {
     "iPhone 12 Pro Max": {
-        128:  {"is": 220, "buy": 240, "sel": 295},
-        256:  {"is": 260, "buy": 270, "sel": 310},
+        128:  {"is": 220, "buy": 260, "sel": 295},
+        256:  {"is": 260, "buy": 300, "sel": 330},
         512:  {"is": 340, "buy": 320, "sel": 350},
     },
     "iPhone 13 Mini": {
-        128:  {"is": 155, "buy": 210, "sel": 250},
-        256:  {"is": 180, "buy": 220, "sel": 260},
+        128:  {"is": 155, "buy": 210, "sel": 240},
+        256:  {"is": 180, "buy": 220, "sel": 250},
     },
     "iPhone 13": {
-        128:  {"is": 190, "buy": 230, "sel": 290},
-        256:  {"is": 210, "buy": 240, "sel": 300},
+        128:  {"is": 190, "buy": 220, "sel": 250},
+        256:  {"is": 210, "buy": 260, "sel": 290},
         512:  {"is": 230, "buy": 250, "sel": 300},
     },
     "iPhone 13 Pro": {
@@ -178,7 +178,7 @@ PRECOS = {
         1024: {"is": 630, "buy": 480, "sel": 650},
     },
     "iPhone 15": {
-        128:  {"is": 300, "buy": 370, "sel": 420},
+        128:  {"is": 300, "buy": 360, "sel": 390},
         256:  {"is": 340, "buy": 450, "sel": 530},
         512:  {"is": 280, "buy": 360, "sel": 420},
     },
@@ -198,13 +198,8 @@ PRECOS = {
         512:  {"is": 650, "buy": 700, "sel": 790},
         1024: {"is": 690, "buy": 750, "sel": 850},
     },
-    "iPhone 16e": {
-        128:  {"is": 280, "buy": 320, "sel": 380},
-        256:  {"is": 310, "buy": 400, "sel": 440},
-        512:  {"is": 320, "buy": None, "sel": None},
-    },
     "iPhone 16": {
-        128:  {"is": 400, "buy": 470, "sel": 540},
+        128:  {"is": 400, "buy": 490, "sel": 550},
         256:  {"is": 440, "buy": 650, "sel": 760},
         512:  {"is": 490, "buy": 570, "sel": 600},
     },
@@ -225,7 +220,7 @@ PRECOS = {
 }
 
 MODELOS_PRIORIDADE = [
-    "iPhone 16 Pro Max", "iPhone 16 Pro", "iPhone 16 Plus", "iPhone 16e", "iPhone 16",
+    "iPhone 16 Pro Max", "iPhone 16 Pro", "iPhone 16 Plus", "iPhone 16",
     "iPhone 15 Pro Max", "iPhone 15 Pro", "iPhone 15 Plus", "iPhone 15",
     "iPhone 14 Pro Max", "iPhone 14 Pro", "iPhone 14 Plus", "iPhone 14",
     "iPhone 13 Pro Max", "iPhone 13 Pro", "iPhone 13 Mini", "iPhone 13",
@@ -247,7 +242,6 @@ MODELOS = {
     "iPhone 15 Pro":     "iphone 15 pro",
     "iPhone 15 Pro Max": "iphone 15 pro max",
     "iPhone 16":         "iphone 16",
-    "iPhone 16e":        "iphone 16e",
     "iPhone 16 Plus":    "iphone 16 plus",
     "iPhone 16 Pro":     "iphone 16 pro",
     "iPhone 16 Pro Max": "iphone 16 pro max",
