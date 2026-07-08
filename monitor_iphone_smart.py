@@ -1,11 +1,10 @@
 """
-OLX TRACKER v8 — Monitor de iPhones (versao GitHub otimizada)
-Otimizacoes desta versao:
-- Janela alargada para 120 minutos (compensa atraso do GitHub Actions)
-- API pede 100 resultados em vez de 40 (apanha anuncios que ficavam de fora)
-- Logs detalhados dos [SKIP] para debug de titulos mal detectados
-- Bateria minima: 81% (rejeita se confirmada abaixo)
-- SEM penalizacao 80-84% (bateria 81+ = precos normais)
+OLX TRACKER v9 — Monitor de iPhones (VERSAO FINAL)
+Correcoes desta versao:
+- BUG FIX: "iPhone 16e" ja nao e classificado como "iPhone 16"
+  (o 16e foi removido da monitorizacao, agora e ignorado explicitamente)
+- Tabela de precos calibrada pelo Pedro (mercado real P2P)
+- Mantem: janela 120min, limit 100, logs detalhados, bateria >= 81%
 """
 
 import requests
@@ -26,11 +25,11 @@ TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID   = os.environ.get("TELEGRAM_CHAT_ID", "")
 
 FICHEIRO_HISTORICO = "historico.json"
-MINUTOS_MAXIMO     = 120     # Janela alargada — compensa fila do GitHub
-BATERIA_MINIMA     = 81      # Rejeita se confirmada abaixo
-LIMITE_API         = 100     # Anuncios por pesquisa (era 40)
+MINUTOS_MAXIMO     = 120
+BATERIA_MINIMA     = 81
+LIMITE_API         = 100
 
-CENTRO_LAT = 38.6907         # Nova SBE / Carcavelos
+CENTRO_LAT = 38.6907
 CENTRO_LON = -9.3128
 RAIO_KM    = 30
 
@@ -129,77 +128,77 @@ FILTROS_DESCRICAO = [
 
 
 # ======================================================================
-#  TABELA DE PRECOS
+#  TABELA DE PRECOS (calibrada pelo Pedro — mercado P2P real)
 # ======================================================================
 
 PRECOS = {
     "iPhone 12 Pro Max": {
-        128:  {"is": 220, "buy": 260, "sel": 295},
-        256:  {"is": 260, "buy": 300, "sel": 330},
+        128: {"is": 220, "buy": 260, "sel": 295},
+        256: {"is": 260, "buy": 300, "sel": 330},
     },
     "iPhone 13 Mini": {
-        128:  {"is": 155, "buy": 210, "sel": 240},
-        256:  {"is": 180, "buy": 220, "sel": 250},
+        128: {"is": 155, "buy": 210, "sel": 240},
+        256: {"is": 180, "buy": 220, "sel": 250},
     },
     "iPhone 13": {
-        128:  {"is": 190, "buy": 220, "sel": 250},
-        256:  {"is": 210, "buy": 260, "sel": 290},
+        128: {"is": 190, "buy": 220, "sel": 250},
+        256: {"is": 210, "buy": 260, "sel": 290},
     },
     "iPhone 13 Pro": {
-        128:  {"is": 250, "buy": 310, "sel": 340},
-        256:  {"is": 260, "buy": 320, "sel": 350},
+        128: {"is": 250, "buy": 310, "sel": 340},
+        256: {"is": 260, "buy": 320, "sel": 350},
     },
     "iPhone 13 Pro Max": {
-        128:  {"is": 300, "buy": 300, "sel": 350},
-        256:  {"is": 320, "buy": 360, "sel": 400},
+        128: {"is": 300, "buy": 300, "sel": 350},
+        256: {"is": 320, "buy": 360, "sel": 400},
     },
     "iPhone 14": {
-        128:  {"is": 200, "buy": 260, "sel": 300},
-        256:  {"is": 240, "buy": 330, "sel": 370},
+        128: {"is": 200, "buy": 260, "sel": 300},
+        256: {"is": 240, "buy": 330, "sel": 370},
     },
     "iPhone 14 Plus": {
-        128:  {"is": 220, "buy": 295, "sel": 340},
-        256:  {"is": 280, "buy": 300, "sel": 360},
+        128: {"is": 220, "buy": 295, "sel": 340},
+        256: {"is": 280, "buy": 300, "sel": 360},
     },
     "iPhone 14 Pro": {
-        128:  {"is": 280, "buy": 360, "sel": 400},
-        256:  {"is": 300, "buy": 380, "sel": 420},
+        128: {"is": 280, "buy": 360, "sel": 400},
+        256: {"is": 300, "buy": 380, "sel": 420},
     },
     "iPhone 14 Pro Max": {
-        128:  {"is": 330, "buy": 390, "sel": 430},
-        256:  {"is": 370, "buy": 400, "sel": 440},
+        128: {"is": 330, "buy": 390, "sel": 430},
+        256: {"is": 370, "buy": 400, "sel": 440},
     },
     "iPhone 15": {
-        128:  {"is": 300, "buy": 360, "sel": 390},
-        256:  {"is": 340, "buy": 400, "sel": 445},
+        128: {"is": 300, "buy": 360, "sel": 390},
+        256: {"is": 340, "buy": 400, "sel": 445},
     },
     "iPhone 15 Plus": {
-        128:  {"is": 290, "buy": 410, "sel": 450},
-        256:  {"is": 330, "buy": 450, "sel": 490},
+        128: {"is": 290, "buy": 410, "sel": 450},
+        256: {"is": 330, "buy": 450, "sel": 490},
     },
     "iPhone 15 Pro": {
-        128:  {"is": 370, "buy": 470, "sel": 510},
-        256:  {"is": 430, "buy": 520, "sel": 600},
+        128: {"is": 370, "buy": 470, "sel": 510},
+        256: {"is": 430, "buy": 520, "sel": 600},
     },
     "iPhone 15 Pro Max": {
-        256:  {"is": 460, "buy": 540, "sel": 580},
-        512:  {"is": 650, "buy": 700, "sel": 790},
+        256: {"is": 460, "buy": 540, "sel": 580},
+        512: {"is": 650, "buy": 700, "sel": 790},
     },
     "iPhone 16": {
-        128:  {"is": 400, "buy": 490, "sel": 550},
-        256:  {"is": 440, "buy": 510, "sel": 550},
+        128: {"is": 400, "buy": 490, "sel": 550},
+        256: {"is": 440, "buy": 510, "sel": 550},
     },
     "iPhone 16 Plus": {
-        128:  {"is": 440, "buy": 580, "sel": 620},
-        256:  {"is": 520, "buy": 600, "sel": 690},
+        128: {"is": 440, "buy": 580, "sel": 620},
+        256: {"is": 520, "buy": 600, "sel": 690},
     },
     "iPhone 16 Pro": {
-        128:  {"is": 460, "buy": 560, "sel": 630},
-        256:  {"is": 520, "buy": 600, "sel": 650},
+        128: {"is": 460, "buy": 560, "sel": 630},
+        256: {"is": 520, "buy": 600, "sel": 650},
     },
     "iPhone 16 Pro Max": {
-        256:  {"is": 560, "buy": 680, "sel": 750},
-        512:  {"is": 610, "buy": 750, "sel": 850},
+        256: {"is": 560, "buy": 680, "sel": 750},
+        512: {"is": 610, "buy": 750, "sel": 850},
     },
 }
 
@@ -311,11 +310,21 @@ def extrair_storage_de_texto(texto):
 
 
 def detectar_modelo_de_texto(texto):
+    """
+    Detecta o modelo real. BUG FIX v9:
+    "iPhone 16e" ja NAO e classificado como "iPhone 16" — e ignorado
+    (devolve None) porque o 16e nao esta na lista de monitorizados.
+    """
     if not texto:
         return None
     texto_lower = str(texto).lower()
     if "iphone" not in texto_lower:
         return None
+
+    # FIX: ignora explicitamente o iPhone 16e (nao monitorizado)
+    if re.search(r"iphone[\s\-]*16\s*e\b", texto_lower):
+        return None
+
     for modelo in MODELOS_PRIORIDADE:
         padrao = modelo.lower().replace(" ", r"[\s\-]+")
         if re.search(padrao, texto_lower):
@@ -699,8 +708,8 @@ def processar_modelo(query_modelo, query, historico):
         return 0
 
     log("  " + str(len(anuncios)) + " anuncio(s)")
-    enviados     = 0
-    skip_modelo  = 0
+    enviados    = 0
+    skip_modelo = 0
 
     for anuncio in anuncios:
         aid    = str(anuncio["id"])
@@ -729,11 +738,10 @@ def processar_modelo(query_modelo, query, historico):
         # 4. Parametros estruturados
         params_olx = extrair_params_olx(anuncio.get("params_lista", []))
 
-        # 5. MODELO: parametros > titulo
+        # 5. MODELO
         modelo_real = params_olx["modelo"] or detectar_modelo_de_texto(titulo)
         if not modelo_real:
             skip_modelo += 1
-            # Log detalhado: mostra o titulo INTEIRO para debug
             log("  [SKIP-MODELO] Titulo: '" + titulo + "'")
             continue
 
@@ -817,7 +825,7 @@ def processar_modelo(query_modelo, query, historico):
 
 def main():
     log("=" * 60)
-    log("OLX TRACKER v8 | " + str(RAIO_KM) + "km Oeiras | bat>=" + str(BATERIA_MINIMA) + "%")
+    log("OLX TRACKER v9 | " + str(RAIO_KM) + "km Oeiras | bat>=" + str(BATERIA_MINIMA) + "%")
     log("Janela: " + str(MINUTOS_MAXIMO) + "min | Limit API: " + str(LIMITE_API))
     log(str(len(MODELOS)) + " modelos | " + str(len(FILTROS_DESCRICAO)) + " filtros descricao")
     log("=" * 60)
