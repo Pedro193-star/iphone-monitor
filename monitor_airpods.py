@@ -31,7 +31,7 @@ TELEGRAM_CHAT_ID   = os.environ.get("TELEGRAM_CHAT_ID", "")
 
 FICHEIRO_HISTORICO = "historico_airpods.json"
 MINUTOS_MAXIMO     = 120
-LIMITE_API         = 100
+LIMITE_API         = 50
 PRECO_MINIMO       = 25     # Abaixo disto e replica quase garantida
 
 CENTRO_LAT = 38.6907
