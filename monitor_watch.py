@@ -30,7 +30,7 @@ TELEGRAM_CHAT_ID   = os.environ.get("TELEGRAM_CHAT_ID", "")
 
 FICHEIRO_HISTORICO = "historico_watch.json"
 MINUTOS_MAXIMO     = 120
-LIMITE_API         = 100
+LIMITE_API         = 50
 PRECO_MINIMO       = 40      # Abaixo disto e acessorio/replica
 
 CENTRO_LAT = 38.6907
