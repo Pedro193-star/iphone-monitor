@@ -1,15 +1,7 @@
 """
-OLX TRACKER — IPAD v1
-Monitoriza iPads (9/10, Air 4/5/M2, Mini 6, Pro 11/12.9/13) no OLX Portugal.
-
-RESTRICOES DE QUALIDADE (rejeita):
-- Bloqueio iCloud / conta Apple
-- Bloqueio MDM / gestao remota (iPads de empresa — armadilha comum!)
-- Ecra partido/rachado, danos por agua, avariado, para pecas
-- Acessorios soltos: capas, pencil sozinho, teclado sozinho
-
-PRECOS: tabela vazia — preencher manualmente. Enquanto vazia,
-notifica TODOS os anuncios que passem os filtros de qualidade.
+OLX TRACKER — IPAD v2
+Modelos: iPad 9/10, Air 4/5/M2/M3, Mini 6/7, Pro M1/M2/M4/M5 (11 e 12.9/13)
+Precos: P2P venda rapida (~1 semana), bom estado, config base — CALIBRAR!
 """
 
 import requests
@@ -20,10 +12,6 @@ import time
 import math
 from datetime import datetime, timezone
 from urllib.parse import quote
-
-# ======================================================================
-#  CONFIGURACOES
-# ======================================================================
 
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID   = os.environ.get("TELEGRAM_CHAT_ID", "")
@@ -54,106 +42,72 @@ LOCAIS_ACEITES = [
 ]
 
 PALAVRAS_TITULO = [
-    # Acessorios soltos
     "capa", "capas", "case", "smart cover", "folio",
     "pelicula", "película", "protetor", "vidro temperado",
     "pencil apenas", "apenas pencil", "so pencil", "só pencil",
     "teclado apenas", "apenas teclado", "so teclado", "só teclado",
     "magic keyboard apenas",
     "suporte", "stand", "dock", "adaptador", "cabo", "carregador",
-    # Outros produtos
     "iphone", "watch", "airpods", "macbook", "imac",
-    # Replicas/tablets genericos
     "replica", "réplica", "imitacao", "imitação",
     "tablet android", "samsung tab", "lenovo", "huawei", "xiaomi pad",
 ]
 
 FILTROS_DESCRICAO = [
-    # Bloqueios — CRITICO em iPads!
-    r"bloqueado\s+icloud",
-    r"icloud\s+bloqueado",
-    r"icloud\s+lock",
-    r"conta\s+icloud",
-    r"conta\s+apple",
-    r"ativa[çc][aã]o\s+bloqueada",
-    r"\bmdm\b",
-    r"gest[aã]o\s+remota",
-    r"remote\s+management",
-    r"supervisionado",
-    r"supervised",
-    r"perfil\s+de\s+empresa",
+    r"bloqueado\s+icloud", r"icloud\s+bloqueado", r"icloud\s+lock",
+    r"conta\s+icloud", r"conta\s+apple", r"ativa[çc][aã]o\s+bloqueada",
+    r"\bmdm\b", r"gest[aã]o\s+remota", r"remote\s+management",
+    r"supervisionado", r"supervised", r"perfil\s+de\s+empresa",
     r"bloqueio\s+de\s+empresa",
     r"\bbloqueado\b(?![\s\S]{0,30}desbloqueado)",
-    # Para pecas / nao funciona
-    r"para\s+pe[çc]as?",
-    r"para\s+repara[çc][aã]o",
-    r"n[aã]o\s+funciona",
-    r"n[aã]o\s+liga",
-    r"n[aã]o\s+carrega",
+    r"para\s+pe[çc]as?", r"para\s+repara[çc][aã]o",
+    r"n[aã]o\s+funciona", r"n[aã]o\s+liga", r"n[aã]o\s+carrega",
     r"deixou\s+de\s+funcionar",
-    # Danos
-    r"ecr[aã]\s+parti",
-    r"vidro\s+parti",
-    r"vidro\s+rachado",
-    r"rachado",
-    r"rachadur",
-    r"ecr[aã]\s+trocado",
-    r"display\s+trocado",
-    r"linhas\s+no\s+ecr[aã]",
-    r"mancha\s+no\s+ecr[aã]",
-    r"pixel\s+morto",
-    r"dead\s+pixel",
-    # Agua
-    r"[aá]gua",
-    r"molhado",
-    r"molhou",
-    r"oxidado",
-    r"oxida[çc][aã]o",
-    r"humidade",
-    # Estado
-    r"avariado",
-    r"avariada",
-    r"estragado",
-    r"estragada",
-    r"com\s+defeito",
-    r"defeituo[sz]",
-    r"roubado",
-    r"perdido",
+    r"ecr[aã]\s+parti", r"vidro\s+parti", r"vidro\s+rachado",
+    r"rachado", r"rachadur", r"ecr[aã]\s+trocado", r"display\s+trocado",
+    r"linhas\s+no\s+ecr[aã]", r"mancha\s+no\s+ecr[aã]",
+    r"pixel\s+morto", r"dead\s+pixel",
+    r"[aá]gua", r"molhado", r"molhou", r"oxidado", r"oxida[çc][aã]o", r"humidade",
+    r"avariado", r"avariada", r"estragado", r"estragada",
+    r"com\s+defeito", r"defeituo[sz]", r"roubado", r"perdido",
     r"n[aã]o\s+[eé]\s+original",
-    r"lote\s+de\s+\d+",
-    r"vendo\s+lote",
+    r"lote\s+de\s+\d+", r"vendo\s+lote",
 ]
 
-# ======================================================================
-#  MODELOS
-# ======================================================================
-
 MODELOS_PRIORIDADE = [
-    "iPad Pro 13 M4",
-    "iPad Pro 12.9",
-    "iPad Pro 11 M4",
-    "iPad Pro 11",
-    "iPad Air M2",
-    "iPad Air 5",
-    "iPad Air 4",
-    "iPad Mini 7",
-    "iPad Mini 6",
-    "iPad 10",
-    "iPad 9",
+    "iPad Pro 13 M5", "iPad Pro 11 M5",
+    "iPad Pro 13 M4", "iPad Pro 11 M4",
+    "iPad Pro 12.9 M2", "iPad Pro 11 M2",
+    "iPad Pro 12.9 M1", "iPad Pro 11 M1",
+    "iPad Pro 12.9", "iPad Pro 11",
+    "iPad Air 13 M3", "iPad Air 11 M3",
+    "iPad Air 13 M2", "iPad Air 11 M2",
+    "iPad Air 5", "iPad Air 4",
+    "iPad Mini 7", "iPad Mini 6",
+    "iPad 10", "iPad 9",
 ]
 
 PADROES = {
-    "iPad Pro 13 M4": r"pro\s*13.*m4|m4.*pro\s*13|pro\s*m4.*13",
-    "iPad Pro 12.9":  r"pro\s*12[\.,]?9",
-    "iPad Pro 11 M4": r"pro\s*11.*m4|m4.*pro\s*11",
-    "iPad Pro 11":    r"pro\s*11",
-    "iPad Air M2":    r"air.*\bm2\b|\bm2\b.*air",
-    "iPad Air 5":     r"air\s*5",
-    "iPad Air 4":     r"air\s*4",
-    "iPad Mini 7":    r"mini\s*7",
-    "iPad Mini 6":    r"mini\s*6",
-    "iPad 10":        r"ipad\s*10\b|10[\u00aa\s]*gera[çc][aã]o",
-    "iPad 9":         r"ipad\s*9\b|9[\u00aa\s]*gera[çc][aã]o",
+    "iPad Pro 13 M5":  r"pro[\s\S]{0,15}13[\s\S]{0,15}m5|m5[\s\S]{0,15}pro[\s\S]{0,10}13",
+    "iPad Pro 11 M5":  r"pro[\s\S]{0,15}11[\s\S]{0,15}m5|m5[\s\S]{0,15}pro[\s\S]{0,10}11|pro[\s\S]{0,10}m5",
+    "iPad Pro 13 M4":  r"pro[\s\S]{0,15}13[\s\S]{0,15}m4|m4[\s\S]{0,15}pro[\s\S]{0,10}13",
+    "iPad Pro 11 M4":  r"pro[\s\S]{0,15}11[\s\S]{0,15}m4|m4[\s\S]{0,15}pro[\s\S]{0,10}11|pro[\s\S]{0,10}m4",
+    "iPad Pro 12.9 M2": r"pro[\s\S]{0,10}12[\.,]?9[\s\S]{0,15}m2|m2[\s\S]{0,15}12[\.,]?9",
+    "iPad Pro 11 M2":  r"pro[\s\S]{0,10}11[\s\S]{0,15}m2|m2[\s\S]{0,15}pro[\s\S]{0,10}11",
+    "iPad Pro 12.9 M1": r"pro[\s\S]{0,10}12[\.,]?9[\s\S]{0,15}m1|m1[\s\S]{0,15}12[\.,]?9|pro[\s\S]{0,10}12[\.,]?9[\s\S]{0,15}2021",
+    "iPad Pro 11 M1":  r"pro[\s\S]{0,10}11[\s\S]{0,15}m1|m1[\s\S]{0,15}pro[\s\S]{0,10}11|pro[\s\S]{0,10}11[\s\S]{0,15}2021",
+    "iPad Pro 12.9":   r"pro\s*12[\.,]?9",
+    "iPad Pro 11":     r"pro\s*11",
+    "iPad Air 13 M3":  r"air[\s\S]{0,10}13[\s\S]{0,15}m3|air[\s\S]{0,10}m3[\s\S]{0,10}13",
+    "iPad Air 11 M3":  r"air[\s\S]{0,15}m3",
+    "iPad Air 13 M2":  r"air[\s\S]{0,10}13[\s\S]{0,15}m2|air[\s\S]{0,10}m2[\s\S]{0,10}13|air\s*13",
+    "iPad Air 11 M2":  r"air[\s\S]{0,15}m2",
+    "iPad Air 5":      r"air\s*5|air[\s\S]{0,15}m1",
+    "iPad Air 4":      r"air\s*4",
+    "iPad Mini 7":     r"mini\s*7",
+    "iPad Mini 6":     r"mini\s*6",
+    "iPad 10":         r"ipad\s*10\b|10[\u00aa\s]*gera[çc][aã]o",
+    "iPad 9":          r"ipad\s*9\b|9[\u00aa\s]*gera[çc][aã]o",
 }
 
 QUERIES = {
@@ -163,18 +117,29 @@ QUERIES = {
     "iPad":      "ipad",
 }
 
-# ======================================================================
-#  PRECOS — PREENCHER MANUALMENTE (por agora vazio)
-#  Exemplo:
-#  PRECOS = {
-#      "iPad Air 5":   {"buy": 300, "sel": 390},
-#      "iPad Pro 11":  {"buy": 380, "sel": 480},
-#  }
-# ======================================================================
-
-PRECOS = {}
-
-# ======================================================================
+# Precos P2P venda rapida (bom estado, storage base, WiFi) — CALIBRAR!
+PRECOS = {
+    "iPad Pro 13 M5":   {"buy": 1070, "sel": 1150},
+    "iPad Pro 11 M5":   {"buy": 880,  "sel": 950},
+    "iPad Pro 13 M4":   {"buy": 890,  "sel": 960},
+    "iPad Pro 11 M4":   {"buy": 730,  "sel": 800},
+    "iPad Pro 12.9 M2": {"buy": 580,  "sel": 640},
+    "iPad Pro 11 M2":   {"buy": 480,  "sel": 530},
+    "iPad Pro 12.9 M1": {"buy": 470,  "sel": 520},
+    "iPad Pro 11 M1":   {"buy": 390,  "sel": 430},
+    "iPad Pro 12.9":    {"buy": 470,  "sel": 520},
+    "iPad Pro 11":      {"buy": 390,  "sel": 430},
+    "iPad Air 13 M3":   {"buy": 590,  "sel": 650},
+    "iPad Air 11 M3":   {"buy": 490,  "sel": 540},
+    "iPad Air 13 M2":   {"buy": 510,  "sel": 560},
+    "iPad Air 11 M2":   {"buy": 420,  "sel": 460},
+    "iPad Air 5":       {"buy": 300,  "sel": 340},
+    "iPad Air 4":       {"buy": 250,  "sel": 280},
+    "iPad Mini 7":      {"buy": 390,  "sel": 430},
+    "iPad Mini 6":      {"buy": 285,  "sel": 320},
+    "iPad 10":          {"buy": 200,  "sel": 230},
+    "iPad 9":           {"buy": 135,  "sel": 160},
+}
 
 HEADERS_API = {
     "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
@@ -226,7 +191,7 @@ def extrair_storage(texto):
     t = str(texto).lower()
     if "2tb" in t or "2 tb" in t:
         return "2TB"
-    if "1024" in t or "1tb" in t or "1 tb" in t:
+    if "1tb" in t or "1 tb" in t or "1024" in t:
         return "1TB"
     if "512" in t:
         return "512GB"
@@ -241,7 +206,7 @@ def extrair_storage(texto):
 
 def detectar_conectividade(texto):
     t = str(texto).lower()
-    if re.search(r"cellular|celular|lte|5g|4g|sim", t):
+    if re.search(r"cellular|celular|lte|5g|4g|\bsim\b", t):
         return "WiFi + Cellular"
     if "wifi" in t or "wi-fi" in t:
         return "WiFi"
@@ -349,8 +314,19 @@ def enviar_telegram(texto):
         return False
 
 
+def classificar(preco, refs):
+    buy = refs["buy"]
+    if preco <= buy:
+        diff = round(((buy - preco) / buy) * 100, 1)
+        if diff >= 15:
+            return "\U0001f525\U0001f525", "EXCELENTE NEGOCIO", diff
+        return "\U0001f525", "BOM NEGOCIO", diff
+    diff = round(((buy - preco) / buy) * 100, 1)
+    return "\u2705", "NO LIMITE — negocia", diff
+
+
 def montar_mensagem(modelo, titulo, preco, link, storage, conect,
-                    icone, label, refs, bateria, condicao, dist_km, local_nome):
+                    icone, label, diff_pct, refs, bateria, condicao, dist_km, local_nome):
     msg = icone + " <b>" + label + "</b>  [iPad]\n\n"
     msg += "\U0001f4f1 <b>" + modelo + "</b>"
     if storage:
@@ -359,12 +335,15 @@ def montar_mensagem(modelo, titulo, preco, link, storage, conect,
         msg += " | " + conect
     msg += "\n\U0001f4cc <b>" + titulo + "</b>\n\n"
     msg += "\U0001f4b6 <b>Preco pedido:</b> " + str(preco) + "\u20ac\n"
-    if refs:
-        msg += ("\U0001f3af Comprar: <b>" + str(refs["buy"]) + "\u20ac</b>  "
-                "\U0001f4c8 Vender: <b>" + str(refs["sel"]) + "\u20ac</b>\n")
-        lucro = refs["sel"] - preco
-        if lucro > 0:
-            msg += "\U0001f4b0 <b>Lucro potencial:</b> +" + str(lucro) + "\u20ac\n"
+    msg += ("\U0001f3af Comprar: <b>" + str(refs["buy"]) + "\u20ac</b>  "
+            "\U0001f4c8 Vender: <b>" + str(refs["sel"]) + "\u20ac</b>\n")
+    lucro = refs["sel"] - preco
+    if lucro > 0:
+        emoji_l = "\U0001f911" if lucro > 100 else "\U0001f4b0"
+        msg += emoji_l + " <b>Lucro potencial:</b> +" + str(lucro) + "\u20ac\n"
+    if diff_pct is not None:
+        sinal = "-" if diff_pct >= 0 else "+"
+        msg += "\U0001f4c9 <b>Vs comprar:</b> " + sinal + str(abs(diff_pct)) + "%\n"
     msg += "\n"
     if bateria is not None:
         msg += "\U0001f50b <b>Bateria:</b> " + str(bateria) + "%\n"
@@ -373,7 +352,7 @@ def montar_mensagem(modelo, titulo, preco, link, storage, conect,
         msg += "\U0001f4cd <b>Local:</b> " + str(dist_km) + "km de Oeiras\n"
     elif local_nome:
         msg += "\U0001f4cd <b>Local:</b> " + local_nome + "\n"
-    msg += "\n\u26a0\ufe0f <i>Verificar: storage, WiFi vs Cellular, iCloud E MDM removidos (Definicoes > Geral > VPN e Gestao)</i>\n"
+    msg += "\n\u26a0\ufe0f <i>Precos = config base. Verificar: storage, WiFi vs Cellular, iCloud E MDM removidos</i>\n"
     msg += "\n\U0001f517 <a href=\"" + link + "\">Ver no OLX</a>"
     return msg
 
@@ -461,6 +440,14 @@ def processar_query(nome, query, historico):
             log("  [SKIP-MODELO] '" + titulo + "'")
             continue
 
+        refs = PRECOS.get(modelo)
+        if not refs:
+            continue
+
+        if preco > (refs["sel"] - 10):
+            log("  [CARO] " + str(preco) + " > " + str(refs["sel"]) + ": " + titulo[:35])
+            continue
+
         aceite, dist_km, local_nome = verificar_localizacao(anuncio)
         if not aceite:
             continue
@@ -475,21 +462,10 @@ def processar_query(nome, query, historico):
         storage = extrair_storage(titulo) or extrair_storage(descricao)
         conect  = detectar_conectividade(titulo) or detectar_conectividade(descricao)
 
-        refs = PRECOS.get(modelo)
-        if refs:
-            if preco > (refs["sel"] - 10):
-                log("  [CARO] " + str(preco) + " > " + str(refs["sel"]))
-                continue
-            if preco <= refs["buy"]:
-                icone, label = "\U0001f525\U0001f525", "EXCELENTE NEGOCIO"
-            else:
-                icone, label = "\u2705", "NO LIMITE — negocia"
-        else:
-            icone, label = "\U0001f195", "NOVO ANUNCIO"
-
-        log("  [OK] " + modelo + " | " + str(preco) + "eur")
+        icone, label, diff_pct = classificar(preco, refs)
+        log("  [OK] " + modelo + " | " + str(preco) + "eur | lucro:+" + str(refs["sel"] - preco) + "eur")
         msg = montar_mensagem(modelo, titulo, preco, anuncio["link"], storage, conect,
-                              icone, label, refs, bateria, condicao, dist_km, local_nome)
+                              icone, label, diff_pct, refs, bateria, condicao, dist_km, local_nome)
         if enviar_telegram(msg):
             enviados += 1
             log("  [SEND] OK")
@@ -499,8 +475,8 @@ def processar_query(nome, query, historico):
 
 def main():
     log("=" * 60)
-    log("OLX TRACKER — IPAD | " + str(RAIO_KM) + "km Oeiras")
-    log("Precos definidos: " + (str(len(PRECOS)) + " modelos" if PRECOS else "NENHUM (modo descoberta)"))
+    log("OLX TRACKER — IPAD v2 | " + str(RAIO_KM) + "km Oeiras")
+    log(str(len(PRECOS)) + " modelos com precos")
     log("=" * 60)
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
         log("ERRO: Credenciais Telegram nao definidas!")
