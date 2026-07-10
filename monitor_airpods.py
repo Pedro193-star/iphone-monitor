@@ -1,16 +1,7 @@
 """
-OLX TRACKER — AIRPODS v1
-Monitoriza AirPods (2, 3, 4, Pro, Pro 2, Max) no OLX Portugal.
-
-RESTRICOES DE QUALIDADE (rejeita):
-- REPLICAS (o maior risco nesta categoria!): replica, imitacao, copia,
-  1:1, "tipo apple", "estilo apple", generico, premium AAA
-- Vendas incompletas: so um auricular, so a caixa, sem caixa
-- Bateria fraca / dura pouco
-- Avariado, para pecas, agua
-
-PRECOS: tabela vazia — preencher manualmente. Enquanto vazia,
-notifica TODOS os anuncios que passem os filtros de qualidade.
+OLX TRACKER — AIRPODS v2
+Modelos: AirPods 2/3/4 (+4 ANC), Pro 1/2/3, Max 1/2
+Precos: P2P venda rapida (~1 semana), bom estado — CALIBRAR com o OLX real.
 """
 
 import requests
@@ -22,17 +13,13 @@ import math
 from datetime import datetime, timezone
 from urllib.parse import quote
 
-# ======================================================================
-#  CONFIGURACOES
-# ======================================================================
-
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID   = os.environ.get("TELEGRAM_CHAT_ID", "")
 
 FICHEIRO_HISTORICO = "historico_airpods.json"
 MINUTOS_MAXIMO     = 120
 LIMITE_API         = 50
-PRECO_MINIMO       = 25     # Abaixo disto e replica quase garantida
+PRECO_MINIMO       = 25
 
 CENTRO_LAT = 38.6907
 CENTRO_LON = -9.3128
@@ -55,83 +42,57 @@ LOCAIS_ACEITES = [
 ]
 
 PALAVRAS_TITULO = [
-    # Replicas — critico!
     "replica", "réplica", "replicas", "réplicas",
     "imitacao", "imitação", "copia", "cópia",
     "tipo apple", "estilo apple", "generico", "genérico",
     "compativel", "compatível", "1:1", "premium",
-    # Vendas incompletas
     "esquerdo", "direito", "so caixa", "só caixa", "apenas caixa",
-    "caixa de carregamento apenas", "um lado", "1 lado", "unidade",
-    # Acessorios
+    "um lado", "1 lado", "unidade",
     "capa", "capas", "case para", "protetor", "skin",
-    # Outros produtos
-    "iphone", "ipad", "watch", "macbook", "imac",
+    "iphone", "ipad", "watch", "macbook",
 ]
 
 FILTROS_DESCRICAO = [
-    # Replicas na descricao
-    r"r[eé]plica",
-    r"imita[çc][aã]o",
-    r"c[oó]pia",
-    r"n[aã]o\s+s[aã]o\s+originais",
-    r"n[aã]o\s+[eé]\s+original",
-    r"gen[eé]rico",
-    r"1\s*[:x]\s*1",
-    r"qualidade\s+premium",
-    r"aaa\+*",
-    r"tipo\s+apple",
-    r"estilo\s+apple",
-    # Incompleto
+    r"r[eé]plica", r"imita[çc][aã]o", r"c[oó]pia",
+    r"n[aã]o\s+s[aã]o\s+originais", r"n[aã]o\s+[eé]\s+original",
+    r"gen[eé]rico", r"1\s*[:x]\s*1", r"qualidade\s+premium",
+    r"aaa\+*", r"tipo\s+apple", r"estilo\s+apple",
     r"s[oó]\s+(?:o\s+)?(?:auricular\s+)?(?:esquerdo|direito)",
     r"apenas\s+(?:o\s+)?(?:auricular\s+)?(?:esquerdo|direito)",
     r"sem\s+caixa\s+de\s+carregamento",
     r"falta\s+(?:um|1)\s+auricular",
     r"s[oó]\s+a\s+caixa",
-    # Bateria fraca
-    r"bateria\s+fraca",
-    r"dura\s+pouco",
-    r"pouca\s+bateria",
-    r"bateria\s+viciada",
-    # Estado
-    r"para\s+pe[çc]as?",
-    r"n[aã]o\s+funciona",
-    r"n[aã]o\s+liga",
-    r"n[aã]o\s+carrega",
-    r"n[aã]o\s+emparelha",
-    r"avariado",
-    r"avariada",
-    r"estragado",
-    r"com\s+defeito",
-    r"[aá]gua",
-    r"molhado",
-    r"molhou",
-    r"roubado",
-    r"perdido",
-    r"lote\s+de\s+\d+",
-    r"vendo\s+lote",
+    r"bateria\s+fraca", r"dura\s+pouco", r"pouca\s+bateria", r"bateria\s+viciada",
+    r"para\s+pe[çc]as?", r"n[aã]o\s+funciona", r"n[aã]o\s+liga",
+    r"n[aã]o\s+carrega", r"n[aã]o\s+emparelha",
+    r"avariado", r"avariada", r"estragado", r"com\s+defeito",
+    r"[aá]gua", r"molhado", r"molhou",
+    r"roubado", r"perdido",
+    r"lote\s+de\s+\d+", r"vendo\s+lote",
 ]
 
-# ======================================================================
-#  MODELOS
-# ======================================================================
-
 MODELOS_PRIORIDADE = [
+    "AirPods Max 2",
     "AirPods Max",
+    "AirPods Pro 3",
     "AirPods Pro 2",
     "AirPods Pro",
+    "AirPods 4 ANC",
     "AirPods 4",
     "AirPods 3",
     "AirPods 2",
 ]
 
 PADROES = {
-    "AirPods Max":   r"airpods?\s*max",
-    "AirPods Pro 2": r"airpods?\s*pro\s*2|pro\s*2[\u00aa\s]*gera|pro\s*\(?usb",
-    "AirPods Pro":   r"airpods?\s*pro",
-    "AirPods 4":     r"airpods?\s*4",
-    "AirPods 3":     r"airpods?\s*3",
-    "AirPods 2":     r"airpods?\s*2",
+    "AirPods Max 2":  r"max\s*2|max.*usb",
+    "AirPods Max":    r"airpods?\s*max",
+    "AirPods Pro 3":  r"pro\s*3",
+    "AirPods Pro 2":  r"pro\s*2|pro.*usb",
+    "AirPods Pro":    r"airpods?\s*pro",
+    "AirPods 4 ANC":  r"airpods?\s*4.*(anc|cancelamento|noise)",
+    "AirPods 4":      r"airpods?\s*4",
+    "AirPods 3":      r"airpods?\s*3",
+    "AirPods 2":      r"airpods?\s*2",
 }
 
 QUERIES = {
@@ -140,18 +101,18 @@ QUERIES = {
     "AirPods":     "airpods",
 }
 
-# ======================================================================
-#  PRECOS — PREENCHER MANUALMENTE (por agora vazio)
-#  Exemplo:
-#  PRECOS = {
-#      "AirPods Pro 2": {"buy": 120, "sel": 170},
-#      "AirPods Max":   {"buy": 250, "sel": 350},
-#  }
-# ======================================================================
-
-PRECOS = {}
-
-# ======================================================================
+# Precos P2P venda rapida (bom estado, com caixa) — CALIBRAR!
+PRECOS = {
+    "AirPods Max 2":  {"buy": 375, "sel": 420},
+    "AirPods Max":    {"buy": 245, "sel": 280},
+    "AirPods Pro 3":  {"buy": 155, "sel": 185},
+    "AirPods Pro 2":  {"buy": 115, "sel": 140},
+    "AirPods Pro":    {"buy": 80,  "sel": 100},
+    "AirPods 4 ANC":  {"buy": 100, "sel": 125},
+    "AirPods 4":      {"buy": 75,  "sel": 95},
+    "AirPods 3":      {"buy": 70,  "sel": 90},
+    "AirPods 2":      {"buy": 45,  "sel": 60},
+}
 
 HEADERS_API = {
     "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
@@ -214,8 +175,7 @@ def detectar_modelo(titulo):
     for modelo in MODELOS_PRIORIDADE:
         if re.search(PADROES[modelo], t):
             return modelo
-    # "airpods" sem numero — assume 2a geracao (mais comum sem numero)
-    return "AirPods 2"
+    return "AirPods 2"   # "airpods" sem numero -> assume 2a geracao
 
 
 def titulo_proibido(titulo):
@@ -235,11 +195,11 @@ def analisar_descricao(descricao):
         if m:
             return True, m.group(0), None
     partes = []
-    if re.search(r"\b(originais?|com\s+fatura|fatura\s+incluida|n[uú]mero\s+de\s+s[eé]rie)\b", d):
+    if re.search(r"\b(originais?|com\s+fatura|fatura\s+inclu[ií]da|n[uú]mero\s+de\s+s[eé]rie)\b", d):
         partes.append("\u2705 Menciona original/fatura")
     if re.search(r"\b(impec[áa]vel|perfeito\s+estado|como\s+novo|pouco\s+uso)\b", d):
         partes.append("\u2705 Bom estado")
-    if not partes and re.search(r"\b(riscos?|marcas\s+de\s+uso|usado)\b", d):
+    if not partes and re.search(r"\b(riscos?|marcas\s+de\s+uso)\b", d):
         partes.append("\u26a0\ufe0f Sinais de uso")
     condicao = " | ".join(partes) if partes else "\u26aa Estado nao mencionado"
     return False, None, condicao
@@ -287,18 +247,31 @@ def enviar_telegram(texto):
         return False
 
 
-def montar_mensagem(modelo, titulo, preco, link, icone, label, refs,
+def classificar(preco, refs):
+    buy = refs["buy"]
+    if preco <= buy:
+        diff = round(((buy - preco) / buy) * 100, 1)
+        if diff >= 15:
+            return "\U0001f525\U0001f525", "EXCELENTE NEGOCIO", diff
+        return "\U0001f525", "BOM NEGOCIO", diff
+    diff = round(((buy - preco) / buy) * 100, 1)
+    return "\u2705", "NO LIMITE — negocia", diff
+
+
+def montar_mensagem(modelo, titulo, preco, link, icone, label, diff_pct, refs,
                     condicao, dist_km, local_nome):
     msg = icone + " <b>" + label + "</b>  [AirPods]\n\n"
     msg += "\U0001f3a7 <b>" + modelo + "</b>\n"
     msg += "\U0001f4cc <b>" + titulo + "</b>\n\n"
     msg += "\U0001f4b6 <b>Preco pedido:</b> " + str(preco) + "\u20ac\n"
-    if refs:
-        msg += ("\U0001f3af Comprar: <b>" + str(refs["buy"]) + "\u20ac</b>  "
-                "\U0001f4c8 Vender: <b>" + str(refs["sel"]) + "\u20ac</b>\n")
-        lucro = refs["sel"] - preco
-        if lucro > 0:
-            msg += "\U0001f4b0 <b>Lucro potencial:</b> +" + str(lucro) + "\u20ac\n"
+    msg += ("\U0001f3af Comprar: <b>" + str(refs["buy"]) + "\u20ac</b>  "
+            "\U0001f4c8 Vender: <b>" + str(refs["sel"]) + "\u20ac</b>\n")
+    lucro = refs["sel"] - preco
+    if lucro > 0:
+        msg += "\U0001f4b0 <b>Lucro potencial:</b> +" + str(lucro) + "\u20ac\n"
+    if diff_pct is not None:
+        sinal = "-" if diff_pct >= 0 else "+"
+        msg += "\U0001f4c9 <b>Vs comprar:</b> " + sinal + str(abs(diff_pct)) + "%\n"
     msg += "\n\U0001f50d <b>Estado:</b> " + condicao + "\n"
     if dist_km is not None:
         msg += "\U0001f4cd <b>Local:</b> " + str(dist_km) + "km de Oeiras\n"
@@ -392,6 +365,14 @@ def processar_query(nome, query, historico):
             log("  [SKIP-MODELO] '" + titulo + "'")
             continue
 
+        refs = PRECOS.get(modelo)
+        if not refs:
+            continue
+
+        if preco > (refs["sel"] - 10):
+            log("  [CARO] " + str(preco) + " > " + str(refs["sel"]) + ": " + titulo[:35])
+            continue
+
         aceite, dist_km, local_nome = verificar_localizacao(anuncio)
         if not aceite:
             continue
@@ -403,21 +384,10 @@ def processar_query(nome, query, historico):
             log("  [DESC-FILTRO] " + str(motivo) + ": " + titulo[:40])
             continue
 
-        refs = PRECOS.get(modelo)
-        if refs:
-            if preco > (refs["sel"] - 10):
-                log("  [CARO] " + str(preco) + " > " + str(refs["sel"]))
-                continue
-            if preco <= refs["buy"]:
-                icone, label = "\U0001f525\U0001f525", "EXCELENTE NEGOCIO"
-            else:
-                icone, label = "\u2705", "NO LIMITE — negocia"
-        else:
-            icone, label = "\U0001f195", "NOVO ANUNCIO"
-
-        log("  [OK] " + modelo + " | " + str(preco) + "eur")
+        icone, label, diff_pct = classificar(preco, refs)
+        log("  [OK] " + modelo + " | " + str(preco) + "eur | lucro:+" + str(refs["sel"] - preco) + "eur")
         msg = montar_mensagem(modelo, titulo, preco, anuncio["link"],
-                              icone, label, refs, condicao, dist_km, local_nome)
+                              icone, label, diff_pct, refs, condicao, dist_km, local_nome)
         if enviar_telegram(msg):
             enviados += 1
             log("  [SEND] OK")
@@ -427,8 +397,8 @@ def processar_query(nome, query, historico):
 
 def main():
     log("=" * 60)
-    log("OLX TRACKER — AIRPODS | " + str(RAIO_KM) + "km Oeiras")
-    log("Precos definidos: " + (str(len(PRECOS)) + " modelos" if PRECOS else "NENHUM (modo descoberta)"))
+    log("OLX TRACKER — AIRPODS v2 | " + str(RAIO_KM) + "km Oeiras")
+    log(str(len(PRECOS)) + " modelos com precos")
     log("=" * 60)
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
         log("ERRO: Credenciais Telegram nao definidas!")
