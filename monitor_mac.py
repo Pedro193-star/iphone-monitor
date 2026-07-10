@@ -1,17 +1,8 @@
 """
-OLX TRACKER — MAC v1
-Monitoriza MacBook Air/Pro (M1-M4), Mac Mini e iMac no OLX Portugal.
-
-RESTRICOES DE QUALIDADE (rejeita):
-- Bloqueio iCloud / Find My Mac / conta Apple
-- Bloqueio MDM / gestao remota (Macs de empresa!)
-- Firmware/EFI lock, password de firmware
-- Ecra com manchas, linhas, pixeis mortos, partido
-- Danos por agua (fatal em Macs), avariado, para pecas
-- Modelos Intel antigos (so monitoriza Apple Silicon M1+)
-
-PRECOS: tabela vazia — preencher manualmente. Enquanto vazia,
-notifica TODOS os anuncios que passem os filtros de qualidade.
+OLX TRACKER — MAC v2
+Modelos: MacBook Air M1-M4 (13/15), MacBook Pro M1-M5, Mac Mini, iMac
+So Apple Silicon (Intel ignorado).
+Precos: P2P venda rapida (~1 semana), bom estado, config base — CALIBRAR!
 """
 
 import requests
@@ -22,10 +13,6 @@ import time
 import math
 from datetime import datetime, timezone
 from urllib.parse import quote
-
-# ======================================================================
-#  CONFIGURACOES
-# ======================================================================
 
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID   = os.environ.get("TELEGRAM_CHAT_ID", "")
@@ -56,100 +43,55 @@ LOCAIS_ACEITES = [
 ]
 
 PALAVRAS_TITULO = [
-    # Acessorios soltos
     "carregador", "carregadores", "magsafe apenas", "cabo",
     "capa", "capas", "sleeve", "bolsa", "mala", "mochila",
     "teclado apenas", "apenas teclado", "magic keyboard",
     "magic mouse", "rato", "mouse", "trackpad",
     "suporte", "stand", "dock", "hub", "adaptador",
     "pelicula", "película", "protetor",
-    # Outros produtos
     "iphone", "watch", "airpods", "ipad",
-    # Nao-Apple / hackintosh
-    "hackintosh", "windows", "asus", "lenovo", "hp ", "dell", "acer",
+    "hackintosh", "windows", "asus", "lenovo", "dell", "acer",
 ]
 
 FILTROS_DESCRICAO = [
-    # Bloqueios — CRITICO!
-    r"bloqueado\s+icloud",
-    r"icloud\s+bloqueado",
-    r"icloud\s+lock",
-    r"conta\s+icloud",
-    r"conta\s+apple",
+    r"bloqueado\s+icloud", r"icloud\s+bloqueado", r"icloud\s+lock",
+    r"conta\s+icloud", r"conta\s+apple",
     r"find\s+my\s+(?:mac|ativo|ligado)",
     r"ativa[çc][aã]o\s+bloqueada",
-    r"\bmdm\b",
-    r"gest[aã]o\s+remota",
-    r"remote\s+management",
-    r"perfil\s+de\s+empresa",
-    r"bloqueio\s+de\s+empresa",
-    r"firmware\s+lock",
-    r"password\s+de\s+firmware",
-    r"efi\s+lock",
+    r"\bmdm\b", r"gest[aã]o\s+remota", r"remote\s+management",
+    r"perfil\s+de\s+empresa", r"bloqueio\s+de\s+empresa",
+    r"firmware\s+lock", r"password\s+de\s+firmware", r"efi\s+lock",
     r"pin\s+bloqueado",
     r"\bbloqueado\b(?![\s\S]{0,30}desbloqueado)",
-    # Para pecas / nao funciona
-    r"para\s+pe[çc]as?",
-    r"para\s+repara[çc][aã]o",
-    r"n[aã]o\s+funciona",
-    r"n[aã]o\s+liga",
-    r"n[aã]o\s+carrega",
+    r"para\s+pe[çc]as?", r"para\s+repara[çc][aã]o",
+    r"n[aã]o\s+funciona", r"n[aã]o\s+liga", r"n[aã]o\s+carrega",
     r"deixou\s+de\s+funcionar",
-    # Ecra
-    r"ecr[aã]\s+parti",
-    r"ecr[aã]\s+rachado",
-    r"linhas\s+no\s+ecr[aã]",
-    r"mancha\s+no\s+ecr[aã]",
-    r"manchas\s+no\s+ecr[aã]",
-    r"pixel\s+morto",
-    r"pixeis\s+mortos",
-    r"dead\s+pixel",
-    r"ecr[aã]\s+trocado",
-    r"display\s+trocado",
-    r"backlight",
-    r"retroilumina[çc][aã]o",
-    # Agua — fatal em Macs
-    r"[aá]gua",
-    r"molhado",
-    r"molhou",
-    r"derramou",
-    r"derrame",
-    r"liquido",
-    r"l[ií]quido",
-    r"oxidado",
-    r"oxida[çc][aã]o",
-    r"humidade",
-    # Teclado/bateria com problemas
-    r"teclas?\s+(?:que\s+)?n[aã]o\s+funciona",
-    r"teclado\s+avariado",
-    r"bateria\s+inchada",
-    r"bateria\s+viciada",
-    r"service\s+battery",
+    r"ecr[aã]\s+parti", r"ecr[aã]\s+rachado",
+    r"linhas\s+no\s+ecr[aã]", r"mancha\s+no\s+ecr[aã]", r"manchas\s+no\s+ecr[aã]",
+    r"pixel\s+morto", r"pixeis\s+mortos", r"dead\s+pixel",
+    r"ecr[aã]\s+trocado", r"display\s+trocado",
+    r"backlight", r"retroilumina[çc][aã]o",
+    r"[aá]gua", r"molhado", r"molhou", r"derramou", r"derrame",
+    r"liquido", r"l[ií]quido", r"oxidado", r"oxida[çc][aã]o", r"humidade",
+    r"teclas?\s+(?:que\s+)?n[aã]o\s+funciona", r"teclado\s+avariado",
+    r"bateria\s+inchada", r"bateria\s+viciada", r"service\s+battery",
     r"reparar\s+bateria",
-    # Estado
-    r"avariado",
-    r"avariada",
-    r"estragado",
-    r"estragada",
-    r"com\s+defeito",
-    r"defeituo[sz]",
-    r"roubado",
-    r"perdido",
-    r"lote\s+de\s+\d+",
-    r"vendo\s+lote",
+    r"avariado", r"avariada", r"estragado", r"estragada",
+    r"com\s+defeito", r"defeituo[sz]", r"roubado", r"perdido",
+    r"lote\s+de\s+\d+", r"vendo\s+lote",
 ]
 
-# ======================================================================
-#  MODELOS — so Apple Silicon (M1 em diante)
-# ======================================================================
-
 MODELOS_PRIORIDADE = [
+    "MacBook Pro M5",
     "MacBook Pro M4",
     "MacBook Pro M3",
     "MacBook Pro M2",
     "MacBook Pro M1",
+    "MacBook Air 15 M4",
     "MacBook Air M4",
+    "MacBook Air 15 M3",
     "MacBook Air M3",
+    "MacBook Air 15 M2",
     "MacBook Air M2",
     "MacBook Air M1",
     "Mac Mini M4",
@@ -161,20 +103,24 @@ MODELOS_PRIORIDADE = [
 ]
 
 PADROES = {
-    "MacBook Pro M4": r"macbook\s*pro[\s\S]{0,25}\bm4\b|\bm4\b[\s\S]{0,25}macbook\s*pro",
-    "MacBook Pro M3": r"macbook\s*pro[\s\S]{0,25}\bm3\b|\bm3\b[\s\S]{0,25}macbook\s*pro",
-    "MacBook Pro M2": r"macbook\s*pro[\s\S]{0,25}\bm2\b|\bm2\b[\s\S]{0,25}macbook\s*pro",
-    "MacBook Pro M1": r"macbook\s*pro[\s\S]{0,25}\bm1\b|\bm1\b[\s\S]{0,25}macbook\s*pro",
-    "MacBook Air M4": r"macbook\s*air[\s\S]{0,25}\bm4\b|\bm4\b[\s\S]{0,25}macbook\s*air",
-    "MacBook Air M3": r"macbook\s*air[\s\S]{0,25}\bm3\b|\bm3\b[\s\S]{0,25}macbook\s*air",
-    "MacBook Air M2": r"macbook\s*air[\s\S]{0,25}\bm2\b|\bm2\b[\s\S]{0,25}macbook\s*air",
-    "MacBook Air M1": r"macbook\s*air[\s\S]{0,25}\bm1\b|\bm1\b[\s\S]{0,25}macbook\s*air",
-    "Mac Mini M4":    r"mac\s*mini[\s\S]{0,25}\bm4\b|\bm4\b[\s\S]{0,25}mac\s*mini",
-    "Mac Mini M2":    r"mac\s*mini[\s\S]{0,25}\bm2\b|\bm2\b[\s\S]{0,25}mac\s*mini",
-    "Mac Mini M1":    r"mac\s*mini[\s\S]{0,25}\bm1\b|\bm1\b[\s\S]{0,25}mac\s*mini",
-    "iMac M4":        r"imac[\s\S]{0,25}\bm4\b|\bm4\b[\s\S]{0,25}imac",
-    "iMac M3":        r"imac[\s\S]{0,25}\bm3\b|\bm3\b[\s\S]{0,25}imac",
-    "iMac M1":        r"imac[\s\S]{0,25}\bm1\b|\bm1\b[\s\S]{0,25}imac",
+    "MacBook Pro M5":    r"macbook\s*pro[\s\S]{0,25}\bm5\b|\bm5\b[\s\S]{0,25}macbook\s*pro",
+    "MacBook Pro M4":    r"macbook\s*pro[\s\S]{0,25}\bm4\b|\bm4\b[\s\S]{0,25}macbook\s*pro",
+    "MacBook Pro M3":    r"macbook\s*pro[\s\S]{0,25}\bm3\b|\bm3\b[\s\S]{0,25}macbook\s*pro",
+    "MacBook Pro M2":    r"macbook\s*pro[\s\S]{0,25}\bm2\b|\bm2\b[\s\S]{0,25}macbook\s*pro",
+    "MacBook Pro M1":    r"macbook\s*pro[\s\S]{0,25}\bm1\b|\bm1\b[\s\S]{0,25}macbook\s*pro",
+    "MacBook Air 15 M4": r"air[\s\S]{0,10}15[\s\S]{0,15}\bm4\b|\bm4\b[\s\S]{0,10}air[\s\S]{0,10}15",
+    "MacBook Air M4":    r"macbook\s*air[\s\S]{0,25}\bm4\b|\bm4\b[\s\S]{0,25}macbook\s*air",
+    "MacBook Air 15 M3": r"air[\s\S]{0,10}15[\s\S]{0,15}\bm3\b|\bm3\b[\s\S]{0,10}air[\s\S]{0,10}15",
+    "MacBook Air M3":    r"macbook\s*air[\s\S]{0,25}\bm3\b|\bm3\b[\s\S]{0,25}macbook\s*air",
+    "MacBook Air 15 M2": r"air[\s\S]{0,10}15[\s\S]{0,15}\bm2\b|\bm2\b[\s\S]{0,10}air[\s\S]{0,10}15",
+    "MacBook Air M2":    r"macbook\s*air[\s\S]{0,25}\bm2\b|\bm2\b[\s\S]{0,25}macbook\s*air",
+    "MacBook Air M1":    r"macbook\s*air[\s\S]{0,25}\bm1\b|\bm1\b[\s\S]{0,25}macbook\s*air",
+    "Mac Mini M4":       r"mac\s*mini[\s\S]{0,25}\bm4\b|\bm4\b[\s\S]{0,25}mac\s*mini",
+    "Mac Mini M2":       r"mac\s*mini[\s\S]{0,25}\bm2\b|\bm2\b[\s\S]{0,25}mac\s*mini",
+    "Mac Mini M1":       r"mac\s*mini[\s\S]{0,25}\bm1\b|\bm1\b[\s\S]{0,25}mac\s*mini",
+    "iMac M4":           r"imac[\s\S]{0,25}\bm4\b|\bm4\b[\s\S]{0,25}imac",
+    "iMac M3":           r"imac[\s\S]{0,25}\bm3\b|\bm3\b[\s\S]{0,25}imac",
+    "iMac M1":           r"imac[\s\S]{0,25}\bm1\b|\bm1\b[\s\S]{0,25}imac",
 }
 
 QUERIES = {
@@ -184,18 +130,28 @@ QUERIES = {
     "iMac":        "imac",
 }
 
-# ======================================================================
-#  PRECOS — PREENCHER MANUALMENTE (por agora vazio)
-#  Exemplo:
-#  PRECOS = {
-#      "MacBook Air M1": {"buy": 380, "sel": 500},
-#      "MacBook Pro M1": {"buy": 550, "sel": 700},
-#  }
-# ======================================================================
-
-PRECOS = {}
-
-# ======================================================================
+# Precos P2P venda rapida (bom estado, config base 8-16GB/256) — CALIBRAR!
+# Nota: Pro M1/M2/M4/M5 = versoes Pro/Max 14-16". Ecra 16" vale +100-150.
+PRECOS = {
+    "MacBook Pro M5":    {"buy": 1770, "sel": 1900},
+    "MacBook Pro M4":    {"buy": 1340, "sel": 1450},
+    "MacBook Pro M3":    {"buy": 830,  "sel": 900},
+    "MacBook Pro M2":    {"buy": 810,  "sel": 880},
+    "MacBook Pro M1":    {"buy": 620,  "sel": 680},
+    "MacBook Air 15 M4": {"buy": 850,  "sel": 920},
+    "MacBook Air M4":    {"buy": 760,  "sel": 830},
+    "MacBook Air 15 M3": {"buy": 660,  "sel": 720},
+    "MacBook Air M3":    {"buy": 600,  "sel": 650},
+    "MacBook Air 15 M2": {"buy": 550,  "sel": 600},
+    "MacBook Air M2":    {"buy": 480,  "sel": 520},
+    "MacBook Air M1":    {"buy": 370,  "sel": 400},
+    "Mac Mini M4":       {"buy": 480,  "sel": 520},
+    "Mac Mini M2":       {"buy": 340,  "sel": 380},
+    "Mac Mini M1":       {"buy": 270,  "sel": 300},
+    "iMac M4":           {"buy": 1070, "sel": 1150},
+    "iMac M3":           {"buy": 880,  "sel": 950},
+    "iMac M1":           {"buy": 590,  "sel": 650},
+}
 
 HEADERS_API = {
     "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
@@ -282,12 +238,12 @@ def minutos_desde(created_at_str):
 
 def detectar_modelo(titulo):
     t = titulo.lower()
-    if "macbook" not in t and "mac mini" not in t and "imac" not in t and "mac  mini" not in t:
+    if "macbook" not in t and "mac mini" not in t and "imac" not in t:
         return None
     for modelo in MODELOS_PRIORIDADE:
         if re.search(PADROES[modelo], t):
             return modelo
-    return None   # Intel ou sem chip identificado — ignora
+    return None
 
 
 def titulo_proibido(titulo):
@@ -366,8 +322,19 @@ def enviar_telegram(texto):
         return False
 
 
+def classificar(preco, refs):
+    buy = refs["buy"]
+    if preco <= buy:
+        diff = round(((buy - preco) / buy) * 100, 1)
+        if diff >= 15:
+            return "\U0001f525\U0001f525", "EXCELENTE NEGOCIO", diff
+        return "\U0001f525", "BOM NEGOCIO", diff
+    diff = round(((buy - preco) / buy) * 100, 1)
+    return "\u2705", "NO LIMITE — negocia", diff
+
+
 def montar_mensagem(modelo, titulo, preco, link, ram, storage, ciclos,
-                    icone, label, refs, condicao, dist_km, local_nome):
+                    icone, label, diff_pct, refs, condicao, dist_km, local_nome):
     msg = icone + " <b>" + label + "</b>  [Mac]\n\n"
     msg += "\U0001f4bb <b>" + modelo + "</b>"
     if ram:
@@ -376,12 +343,15 @@ def montar_mensagem(modelo, titulo, preco, link, ram, storage, ciclos,
         msg += " | " + storage
     msg += "\n\U0001f4cc <b>" + titulo + "</b>\n\n"
     msg += "\U0001f4b6 <b>Preco pedido:</b> " + str(preco) + "\u20ac\n"
-    if refs:
-        msg += ("\U0001f3af Comprar: <b>" + str(refs["buy"]) + "\u20ac</b>  "
-                "\U0001f4c8 Vender: <b>" + str(refs["sel"]) + "\u20ac</b>\n")
-        lucro = refs["sel"] - preco
-        if lucro > 0:
-            msg += "\U0001f4b0 <b>Lucro potencial:</b> +" + str(lucro) + "\u20ac\n"
+    msg += ("\U0001f3af Comprar: <b>" + str(refs["buy"]) + "\u20ac</b>  "
+            "\U0001f4c8 Vender: <b>" + str(refs["sel"]) + "\u20ac</b>\n")
+    lucro = refs["sel"] - preco
+    if lucro > 0:
+        emoji_l = "\U0001f911" if lucro > 100 else "\U0001f4b0"
+        msg += emoji_l + " <b>Lucro potencial:</b> +" + str(lucro) + "\u20ac\n"
+    if diff_pct is not None:
+        sinal = "-" if diff_pct >= 0 else "+"
+        msg += "\U0001f4c9 <b>Vs comprar:</b> " + sinal + str(abs(diff_pct)) + "%\n"
     msg += "\n"
     if ciclos is not None:
         c_emoji = "\U0001f50b" if ciclos < 500 else "\u26a0\ufe0f"
@@ -391,7 +361,7 @@ def montar_mensagem(modelo, titulo, preco, link, ram, storage, ciclos,
         msg += "\U0001f4cd <b>Local:</b> " + str(dist_km) + "km de Oeiras\n"
     elif local_nome:
         msg += "\U0001f4cd <b>Local:</b> " + local_nome + "\n"
-    msg += "\n\u26a0\ufe0f <i>Verificar: RAM/storage, ciclos bateria (&lt;500 ideal), Find My DESLIGADO, sem MDM, teclado PT, testar todas as portas</i>\n"
+    msg += "\n\u26a0\ufe0f <i>Precos = config base. Verificar: RAM/storage, ciclos (&lt;500), Find My OFF, sem MDM, teclado PT. Ecra 16\" vale +100-150</i>\n"
     msg += "\n\U0001f517 <a href=\"" + link + "\">Ver no OLX</a>"
     return msg
 
@@ -479,6 +449,14 @@ def processar_query(nome, query, historico):
             log("  [SKIP-MODELO] '" + titulo + "'")
             continue
 
+        refs = PRECOS.get(modelo)
+        if not refs:
+            continue
+
+        if preco > (refs["sel"] - 10):
+            log("  [CARO] " + str(preco) + " > " + str(refs["sel"]) + ": " + titulo[:35])
+            continue
+
         aceite, dist_km, local_nome = verificar_localizacao(anuncio)
         if not aceite:
             continue
@@ -493,21 +471,10 @@ def processar_query(nome, query, historico):
         ram     = extrair_ram(titulo) or extrair_ram(descricao)
         storage = extrair_storage(titulo) or extrair_storage(descricao)
 
-        refs = PRECOS.get(modelo)
-        if refs:
-            if preco > (refs["sel"] - 10):
-                log("  [CARO] " + str(preco) + " > " + str(refs["sel"]))
-                continue
-            if preco <= refs["buy"]:
-                icone, label = "\U0001f525\U0001f525", "EXCELENTE NEGOCIO"
-            else:
-                icone, label = "\u2705", "NO LIMITE — negocia"
-        else:
-            icone, label = "\U0001f195", "NOVO ANUNCIO"
-
-        log("  [OK] " + modelo + " | " + str(preco) + "eur")
+        icone, label, diff_pct = classificar(preco, refs)
+        log("  [OK] " + modelo + " | " + str(preco) + "eur | lucro:+" + str(refs["sel"] - preco) + "eur")
         msg = montar_mensagem(modelo, titulo, preco, anuncio["link"], ram, storage, ciclos,
-                              icone, label, refs, condicao, dist_km, local_nome)
+                              icone, label, diff_pct, refs, condicao, dist_km, local_nome)
         if enviar_telegram(msg):
             enviados += 1
             log("  [SEND] OK")
@@ -517,8 +484,8 @@ def processar_query(nome, query, historico):
 
 def main():
     log("=" * 60)
-    log("OLX TRACKER — MAC | " + str(RAIO_KM) + "km Oeiras | so Apple Silicon (M1+)")
-    log("Precos definidos: " + (str(len(PRECOS)) + " modelos" if PRECOS else "NENHUM (modo descoberta)"))
+    log("OLX TRACKER — MAC v2 | " + str(RAIO_KM) + "km Oeiras | so Apple Silicon")
+    log(str(len(PRECOS)) + " modelos com precos")
     log("=" * 60)
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
         log("ERRO: Credenciais Telegram nao definidas!")
